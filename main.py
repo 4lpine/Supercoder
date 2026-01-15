@@ -285,6 +285,71 @@ def get_context_limit(model_id: str) -> int:
         fetch_models()
     return _model_cache.get(model_id, {}).get("context_length", MODEL_LIMITS["default"])
 
+def get_model_pricing(model_id: str) -> Tuple[float, float]:
+    """Get pricing for a model (prompt_price, completion_price) per token."""
+    global _cache_loaded
+    if not _cache_loaded:
+        fetch_models()
+    
+    model_info = _model_cache.get(model_id, {})
+    pricing = model_info.get("pricing", {})
+    
+    # OpenRouter returns price per token as a string
+    prompt_price = float(pricing.get("prompt", "0") or "0")
+    completion_price = float(pricing.get("completion", "0") or "0")
+    
+    return prompt_price, completion_price
+
+def is_free_model(model_id: str) -> bool:
+    """Check if a model is free (either g4f or free OpenRouter model)."""
+    # G4F models are always free
+    if model_id in G4F_FREE_MODELS:
+        return True
+    
+    # Check OpenRouter pricing
+    prompt_price, completion_price = get_model_pricing(model_id)
+    return prompt_price == 0 and completion_price == 0
+
+class CostTracker:
+    """Track API costs for the session."""
+    
+    def __init__(self):
+        self.total_cost = 0.0
+        self.total_prompt_tokens = 0
+        self.total_completion_tokens = 0
+        self.query_count = 0
+    
+    def add_query(self, model_id: str, prompt_tokens: int, completion_tokens: int) -> float:
+        """Add a query and return its cost."""
+        prompt_price, completion_price = get_model_pricing(model_id)
+        
+        query_cost = (prompt_tokens * prompt_price) + (completion_tokens * completion_price)
+        
+        self.total_cost += query_cost
+        self.total_prompt_tokens += prompt_tokens
+        self.total_completion_tokens += completion_tokens
+        self.query_count += 1
+        
+        return query_cost
+    
+    def format_cost(self, cost: float) -> str:
+        """Format cost for display."""
+        if cost == 0:
+            return "free"
+        elif cost < 0.0001:
+            return f"<$0.0001"
+        elif cost < 0.01:
+            return f"${cost:.4f}"
+        else:
+            return f"${cost:.2f}"
+    
+    def get_summary(self) -> str:
+        """Get session cost summary."""
+        return f"Session: {self.format_cost(self.total_cost)} ({self.total_prompt_tokens + self.total_completion_tokens:,} tokens, {self.query_count} queries)"
+
+# Global cost tracker
+_cost_tracker = CostTracker()
+
 def model_exists(model_id: str) -> bool:
     global _cache_loaded
     if model_id in _model_cache:
@@ -807,6 +872,13 @@ def cmd_status(state: State, agent: Agent, args: str) -> None:
     print(f"  Auto mode: {_s('ON' if state.auto_mode else 'OFF', C.GREEN if state.auto_mode else C.RED)} (cap: {state.auto_cap})")
     print(f"  Output: {_s('VERBOSE' if state.verbose else ('COMPACT' if state.compact else 'NORMAL'), C.CYAN)}")
     print(f"  Verify: {state.verify_mode}")
+    
+    # Show cost for paid models
+    if not agent.use_g4f and not is_free_model(agent.model):
+        print(f"  Cost: {_s(_cost_tracker.get_summary(), C.YELLOW)}")
+    else:
+        print(f"  Cost: {_s('free', C.GREEN)}")
+    
     if state.pinned:
         print(f"  Pinned: {', '.join(Path(p).name for p in state.pinned)}")
     if state.task:
@@ -1441,6 +1513,18 @@ def run(agent: Agent, state: State) -> None:
                 had_content = bool(content)
                 if content:
                     print()
+                
+                # Track cost for paid models
+                if not agent.use_g4f and not is_free_model(agent.model):
+                    query_cost = _cost_tracker.add_query(
+                        agent.model, 
+                        agent.last_prompt_tokens, 
+                        agent.last_completion_tokens
+                    )
+                    if query_cost > 0:
+                        tokens_used = agent.last_prompt_tokens + agent.last_completion_tokens
+                        print(f"  {C.DIM}[{tokens_used:,} tokens, {_cost_tracker.format_cost(query_cost)}]{C.RST}")
+                
                 sys.stdout.flush()
                 
                 # Track tools used this turn

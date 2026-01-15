@@ -409,6 +409,10 @@ class Agent:
         self.token_counter = TokenCounter()
         self.reserved_output = 4096
         
+        # Track tokens for cost calculation
+        self.last_prompt_tokens = 0
+        self.last_completion_tokens = 0
+        
         # Determine if using g4f or OpenRouter
         self.use_g4f = model in G4F_FREE_MODELS
         
@@ -819,6 +823,10 @@ class Agent:
                         except:
                             pass
                     
+                    # Estimate tokens for cost tracking
+                    self.last_prompt_tokens = self.token_counter.count_messages(self.messages)
+                    self.last_completion_tokens = self.token_counter.count(content)
+                    
                     parsed_calls = []
                     for idx in sorted(tool_calls_data.keys()):
                         tc = tool_calls_data[idx]
@@ -834,6 +842,12 @@ class Agent:
                     message = data["choices"][0]["message"]
                     content = message.get("content") or ""
                     raw_tool_calls = message.get("tool_calls", [])
+                    
+                    # Get actual usage if available, otherwise estimate
+                    usage = data.get("usage", {})
+                    self.last_prompt_tokens = usage.get("prompt_tokens", self.token_counter.count_messages(self.messages))
+                    self.last_completion_tokens = usage.get("completion_tokens", self.token_counter.count(content))
+                    
                     parsed_calls = []
                     for tc in raw_tool_calls:
                         if tc.get("type") == "function":
