@@ -13,6 +13,7 @@ An autonomous AI coding agent that runs in your terminal. Give it a task, and it
     ░  ░  ░   ░░░ ░ ░ ░░          ░     ░░   ░ ░        ░ ░ ░ ▒   ░ ░  ░    ░     ░░   ░
           ░     ░                 ░  ░   ░     ░ ░          ░ ░     ░       ░  ░   ░
                                                ░                  ░
+- Alpine
 ```
 
 ---
