@@ -13,15 +13,26 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Set
 
 # Enable arrow keys and command history
+# Try gnureadline first (better terminal handling), fall back to readline
 try:
-    import readline
-    
+    import gnureadline as readline
+    READLINE_AVAILABLE = True
+except ImportError:
+    try:
+        import readline
+        READLINE_AVAILABLE = True
+    except ImportError:
+        READLINE_AVAILABLE = False
+
+if READLINE_AVAILABLE:
     # Set editing mode to emacs (default, but explicit)
     readline.parse_and_bind('set editing-mode emacs')
     
-    # Fix for arrow keys appending instead of replacing - clear line before history
+    # Standard history navigation
     readline.parse_and_bind(r'"\e[A": previous-history')        # Up arrow
     readline.parse_and_bind(r'"\e[B": next-history')            # Down arrow
+    readline.parse_and_bind(r'"\eOA": previous-history')        # Up arrow (alternate)
+    readline.parse_and_bind(r'"\eOB": next-history')            # Down arrow (alternate)
     readline.parse_and_bind(r'"\e[C": forward-char')            # Right arrow
     readline.parse_and_bind(r'"\e[D": backward-char')           # Left arrow
     
@@ -32,7 +43,7 @@ try:
     readline.parse_and_bind(r'"\e\x7f": backward-kill-word')    # Alt+Backspace -> word delete
     readline.parse_and_bind(r'"\C-h": backward-kill-word')      # Ctrl+H
     
-    # Standard bindings (most already work, but explicit is better)
+    # Standard bindings
     readline.parse_and_bind(r'"\C-w": backward-kill-word')      # Ctrl+W - delete word back
     readline.parse_and_bind(r'"\C-u": unix-line-discard')       # Ctrl+U - delete line
     readline.parse_and_bind(r'"\C-a": beginning-of-line')       # Ctrl+A - start of line
@@ -43,8 +54,10 @@ try:
     readline.parse_and_bind(r'"\eb": backward-word')            # Alt+B - back word
     readline.parse_and_bind(r'"\ef": forward-word')             # Alt+F - forward word
     readline.parse_and_bind(r'"\ed": kill-word')                # Alt+D - delete word forward
-except ImportError:
-    pass  # Windows doesn't have readline, but Docker/Linux does
+    
+    # Ctrl+P/N for history (works better in some terminals)
+    readline.parse_and_bind(r'"\C-p": previous-history')        # Ctrl+P - previous
+    readline.parse_and_bind(r'"\C-n": next-history')            # Ctrl+N - next
 
 import tools
 from Agentic import Agent, execute_tool, MODEL_LIMITS, TokenManager, G4F_FREE_MODELS, G4F_AVAILABLE
@@ -207,12 +220,27 @@ def _build_prompt() -> str:
 
 def get_input(prompt: str = None) -> str:
     try:
+        # Clear any stale readline state before getting input
+        if READLINE_AVAILABLE:
+            try:
+                readline.set_startup_hook(lambda: readline.insert_text(''))
+            except:
+                pass
+        
         if prompt is None:
             prompt = _build_prompt()
             # Pass full prompt to input() so backspace can't delete it
             line = input(prompt)
         else:
             line = input(_s(prompt, C.YELLOW))
+        
+        # Clear startup hook
+        if READLINE_AVAILABLE:
+            try:
+                readline.set_startup_hook(None)
+            except:
+                pass
+        
         stripped = line.strip()
         if stripped == "<<<" or stripped.startswith('"""'):
             end = ">>>" if stripped == "<<<" else '"""'
