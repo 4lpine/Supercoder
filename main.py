@@ -185,7 +185,12 @@ def divider() -> None:
 def _build_prompt() -> str:
     import getpass
     user = getpass.getuser()
-    cwd = Path.cwd().name or "~"
+    # Use HOST_PWD if available (passed from Windows), otherwise use Linux cwd
+    host_pwd = os.environ.get("HOST_PWD", "")
+    if host_pwd:
+        cwd = Path(host_pwd).name or host_pwd
+    else:
+        cwd = Path.cwd().name or "~"
     line1 = f"{C.BPURPLE}┌──({C.BRED}{user}{C.BPURPLE}@{C.BRED}supercoder{C.BPURPLE})-[{C.BOLD}{C.WHITE}{cwd}{C.RST}{C.BPURPLE}]{C.RST}"
     line2 = f"{C.BPURPLE}└─{C.BRED}${C.RST} "
     return f"{line1}\n{line2}"
@@ -1180,7 +1185,9 @@ def run(agent: Agent, state: State) -> None:
     # Check for API keys and prompt if missing (only for non-g4f models)
     _check_and_prompt_tokens(agent)
     
-    status(f"Working directory: {os.getcwd()}", "info")
+    # Show Windows path if available, otherwise Linux path
+    display_cwd = os.environ.get("HOST_PWD", os.getcwd())
+    status(f"Working directory: {display_cwd}", "info")
     divider()
     done, total = _get_task_progress()
     if total > 0:
