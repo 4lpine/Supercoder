@@ -722,76 +722,60 @@ def cmd_clear(state: State, agent: Agent, args: str) -> None:
 def cmd_cd(state: State, agent: Agent, args: str) -> None:
     path = args.strip()
     host_pwd = os.environ.get("HOST_PWD", "")
-    host_root = os.environ.get("HOST_PWD_ROOT", host_pwd)
-    current_linux_path = Path.cwd()
-    workspace_root = Path("/workspace")
     
     if not path:
         # Show current directory
         if host_pwd:
             status(f"Current directory: {host_pwd}", "info")
         else:
-            status(f"Current directory: {current_linux_path}", "info")
+            status(f"Current directory: {os.getcwd()}", "info")
         return
     
     try:
-        # Check if user is trying to use a Windows path
+        # Convert Windows path to Linux path if needed
+        # C:\Projects -> /C/Projects
         if re.match(r'^[A-Za-z]:[/\\]', path):
-            status(f"Windows paths don't work inside Docker.", "warning")
-            status(f"Use relative paths like: cd subdir, cd .., cd -", "info")
-            status(f"Your workspace root: {host_root}", "info")
-            return
+            drive = path[0].upper()
+            rest = path[2:].replace('\\', '/')
+            path = f"/{drive}{rest}"
         
-        # Handle special cases
-        if path == "~" or path == "-":
-            # Go to workspace root
-            target_path = workspace_root
-        elif path == "..":
-            # Go up one directory, but don't go above workspace root
-            parent = current_linux_path.parent
-            if str(current_linux_path) == "/workspace" or not str(parent).startswith("/workspace"):
-                status(f"Already at workspace root: {host_root}", "warning")
+        # Handle ~ as home directory (user's home on the mounted drive)
+        if path == "~":
+            # Try to go to user's home
+            userprofile = os.environ.get("USERPROFILE", "")
+            if userprofile:
+                drive = userprofile[0].upper()
+                rest = userprofile[2:].replace('\\', '/')
+                path = f"/{drive}{rest}"
+            else:
+                status("Could not determine home directory", "error")
                 return
-            target_path = parent
-        elif path.startswith("~"):
-            # ~/subdir means workspace/subdir
-            target_path = workspace_root / path[2:]  # Skip ~/ 
-        elif path.startswith("/"):
-            # Absolute Linux path - check if it's within workspace
+        
+        # Resolve the path
+        if path.startswith("/"):
             target_path = Path(path)
-            if not str(target_path).startswith("/workspace"):
-                status(f"Can only navigate within workspace", "warning")
-                return
         else:
-            # Relative path
-            target_path = (current_linux_path / path).resolve()
-        
-        # Verify target is within workspace
-        target_path = target_path.resolve()
-        if not str(target_path).startswith("/workspace"):
-            status(f"Can only navigate within workspace: {host_root}", "warning")
-            return
+            target_path = (Path.cwd() / path).resolve()
         
         if not target_path.exists():
-            status(f"Directory not found: {path}", "error")
+            status(f"Directory not found: {args.strip()}", "error")
             return
         if not target_path.is_dir():
-            status(f"Not a directory: {path}", "error")
+            status(f"Not a directory: {args.strip()}", "error")
             return
         
         # Change directory
         os.chdir(target_path)
         
         # Update HOST_PWD to show Windows path
-        try:
-            rel_path = target_path.relative_to(workspace_root)
-            if str(rel_path) == ".":
-                os.environ["HOST_PWD"] = host_root
-            else:
-                # Convert forward slashes for Windows display
-                os.environ["HOST_PWD"] = str(Path(host_root) / rel_path)
-        except ValueError:
-            os.environ["HOST_PWD"] = str(target_path)
+        # /C/Projects -> C:\Projects
+        linux_path = str(target_path)
+        if re.match(r'^/[A-Za-z]/', linux_path):
+            drive = linux_path[1].upper()
+            rest = linux_path[2:].replace('/', '\\')
+            os.environ["HOST_PWD"] = f"{drive}:{rest}"
+        else:
+            os.environ["HOST_PWD"] = linux_path
         
         status(f"Changed to: {os.environ['HOST_PWD']}", "success")
     except Exception as e:
