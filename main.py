@@ -176,8 +176,8 @@ def get_input(prompt: str = None) -> str:
     try:
         if prompt is None:
             prompt = _build_prompt()
-            print(prompt, end="")
-            line = input()
+            # Pass full prompt to input() so backspace can't delete it
+            line = input(prompt)
         else:
             line = input(_s(prompt, C.YELLOW))
         stripped = line.strip()
