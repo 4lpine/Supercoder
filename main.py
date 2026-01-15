@@ -426,6 +426,107 @@ def _syntax_highlight(code: str, filename: str = "") -> str:
     except Exception:
         return code
 
+def _highlight_by_language(code: str, language: str) -> str:
+    """Apply syntax highlighting based on language name."""
+    if not PYGMENTS_AVAILABLE or not code.strip():
+        return code
+    try:
+        lexer = get_lexer_by_name(language, stripall=True)
+        formatter = Terminal256Formatter(style='monokai')
+        return highlight(code, lexer, formatter).rstrip()
+    except ClassNotFound:
+        return code
+    except Exception:
+        return code
+
+class StreamingHighlighter:
+    """Handles streaming output with syntax highlighting for code blocks."""
+    
+    def __init__(self):
+        self.buffer = ""
+        self.in_code_block = False
+        self.code_language = ""
+        self.code_buffer = ""
+    
+    def process_chunk(self, chunk: str) -> None:
+        """Process a streaming chunk, highlighting code blocks."""
+        self.buffer += chunk
+        
+        while True:
+            if not self.in_code_block:
+                # Look for start of code block
+                match = re.search(r'```(\w*)\n?', self.buffer)
+                if match:
+                    # Print everything before the code block
+                    before = self.buffer[:match.start()]
+                    if before:
+                        print(before, end='', flush=True)
+                    
+                    # Start code block
+                    self.in_code_block = True
+                    self.code_language = match.group(1) or "text"
+                    self.code_buffer = ""
+                    self.buffer = self.buffer[match.end():]
+                    
+                    # Print code block header
+                    print(f"{C.DIM}```{self.code_language}{C.RST}", flush=True)
+                else:
+                    # No code block found, check if we might be starting one
+                    if '`' in self.buffer:
+                        # Keep potential code block start in buffer
+                        last_backtick = self.buffer.rfind('`')
+                        safe_part = self.buffer[:last_backtick]
+                        if safe_part:
+                            print(safe_part, end='', flush=True)
+                        self.buffer = self.buffer[last_backtick:]
+                    else:
+                        # Safe to print everything
+                        print(self.buffer, end='', flush=True)
+                        self.buffer = ""
+                    break
+            else:
+                # Inside code block, look for end
+                end_match = re.search(r'\n?```', self.buffer)
+                if end_match:
+                    # Found end of code block
+                    self.code_buffer += self.buffer[:end_match.start()]
+                    
+                    # Highlight and print the code
+                    if PYGMENTS_AVAILABLE and self.code_buffer.strip():
+                        highlighted = _highlight_by_language(self.code_buffer, self.code_language)
+                        print(highlighted, flush=True)
+                    else:
+                        print(self.code_buffer, end='', flush=True)
+                    
+                    # Print code block footer
+                    print(f"{C.DIM}```{C.RST}", flush=True)
+                    
+                    self.in_code_block = False
+                    self.code_language = ""
+                    self.code_buffer = ""
+                    self.buffer = self.buffer[end_match.end():]
+                else:
+                    # Still in code block, buffer it
+                    self.code_buffer += self.buffer
+                    self.buffer = ""
+                    break
+    
+    def flush(self) -> None:
+        """Flush any remaining content."""
+        if self.in_code_block and self.code_buffer:
+            # Unclosed code block - print what we have
+            if PYGMENTS_AVAILABLE:
+                highlighted = _highlight_by_language(self.code_buffer, self.code_language)
+                print(highlighted, flush=True)
+            else:
+                print(self.code_buffer, end='', flush=True)
+            print(f"{C.DIM}```{C.RST}", flush=True)
+        elif self.buffer:
+            print(self.buffer, end='', flush=True)
+        self.buffer = ""
+        self.code_buffer = ""
+        self.in_code_block = False
+
 def _print_highlighted_lines(content: str, filename: str, prefix: str = "", line_nums: bool = True, color_override: str = None) -> None:
     """Print content with syntax highlighting and optional line numbers."""
     if PYGMENTS_AVAILABLE and filename:
@@ -1329,9 +1430,14 @@ def run(agent: Agent, state: State) -> None:
                     status(f"Auto cap reached ({state.auto_cap} steps)", "warning")
                     break
                 state.auto_steps += 1
+                
+                # Use streaming highlighter for syntax-highlighted output
+                highlighter = StreamingHighlighter()
                 def on_chunk(chunk: str):
-                    print(chunk, end='', flush=True)
+                    highlighter.process_chunk(chunk)
                 content, tool_calls = agent.PromptWithTools(full_prompt, streaming=True, on_chunk=on_chunk)
+                highlighter.flush()
+                
                 had_content = bool(content)
                 if content:
                     print()
