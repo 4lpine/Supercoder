@@ -540,92 +540,103 @@ def _highlight_by_language(code: str, language: str) -> str:
         return code
 
 class StreamingHighlighter:
-    """Handles streaming output with syntax highlighting for code blocks."""
+    """Handles streaming output - shows raw text immediately, then prettifies code blocks."""
     
     def __init__(self):
         self.buffer = ""
         self.in_code_block = False
         self.code_language = ""
         self.code_buffer = ""
+        self.code_start_line = 0  # Track where code block started for rewriting
+        self.lines_printed = 0
+    
+    def _clear_lines(self, n: int) -> None:
+        """Clear n lines above cursor (for rewriting code blocks)."""
+        if n <= 0:
+            return
+        # Move up n lines and clear each
+        for _ in range(n):
+            sys.stdout.write('\033[A')  # Move up
+            sys.stdout.write('\033[2K')  # Clear line
+        sys.stdout.write('\r')  # Return to start of line
+        sys.stdout.flush()
     
     def process_chunk(self, chunk: str) -> None:
-        """Process a streaming chunk, highlighting code blocks."""
+        """Process a streaming chunk - print raw immediately."""
+        # Always print raw chunk immediately for responsiveness
+        print(chunk, end='', flush=True)
+        
+        # Track for potential prettification
         self.buffer += chunk
         
-        while True:
-            if not self.in_code_block:
-                # Look for start of code block
-                match = re.search(r'```(\w*)\n?', self.buffer)
-                if match:
-                    # Print everything before the code block
-                    before = self.buffer[:match.start()]
-                    if before:
-                        print(before, end='', flush=True)
-                    
-                    # Start code block
-                    self.in_code_block = True
-                    self.code_language = match.group(1) or "text"
-                    self.code_buffer = ""
-                    self.buffer = self.buffer[match.end():]
-                    
-                    # Print code block header
-                    print(f"{C.DIM}```{self.code_language}{C.RST}", flush=True)
-                else:
-                    # No code block found, check if we might be starting one
-                    if '`' in self.buffer:
-                        # Keep potential code block start in buffer
-                        last_backtick = self.buffer.rfind('`')
-                        safe_part = self.buffer[:last_backtick]
-                        if safe_part:
-                            print(safe_part, end='', flush=True)
-                        self.buffer = self.buffer[last_backtick:]
-                    else:
-                        # Safe to print everything
-                        print(self.buffer, end='', flush=True)
-                        self.buffer = ""
-                    break
-            else:
-                # Inside code block, look for end
-                end_match = re.search(r'\n?```', self.buffer)
+        # Count newlines for line tracking
+        self.lines_printed += chunk.count('\n')
+        
+        # Check if we just completed a code block
+        if not self.in_code_block:
+            # Look for start of code block
+            match = re.search(r'```(\w*)\n', self.buffer)
+            if match:
+                self.in_code_block = True
+                self.code_language = match.group(1) or "text"
+                self.code_start_line = self.lines_printed - self.buffer[match.end():].count('\n') - 1
+                self.code_buffer = self.buffer[match.end():]
+                self.buffer = ""
+        else:
+            # Inside code block, accumulate
+            self.code_buffer += chunk
+            
+            # Check for end of code block
+            if '```' in self.code_buffer:
+                end_match = re.search(r'```', self.code_buffer)
                 if end_match:
-                    # Found end of code block
-                    self.code_buffer += self.buffer[:end_match.start()]
+                    code_content = self.code_buffer[:end_match.start()].rstrip('\n')
                     
-                    # Highlight and print the code
-                    if PYGMENTS_AVAILABLE and self.code_buffer.strip():
-                        highlighted = _highlight_by_language(self.code_buffer, self.code_language)
-                        print(highlighted, flush=True)
+                    # Calculate how many lines to clear (code + opening ``` + closing ```)
+                    code_lines = code_content.count('\n') + 1
+                    lines_to_clear = code_lines + 2  # +2 for ``` markers
+                    
+                    # Clear the raw code block
+                    self._clear_lines(lines_to_clear)
+                    
+                    # Print prettified version
+                    print(f"{C.DIM}```{self.code_language}{C.RST}")
+                    if PYGMENTS_AVAILABLE and code_content.strip():
+                        highlighted = _highlight_by_language(code_content, self.code_language)
+                        print(highlighted)
                     else:
-                        print(self.code_buffer, end='', flush=True)
-                    
-                    # Print code block footer
+                        print(code_content)
                     print(f"{C.DIM}```{C.RST}", flush=True)
                     
+                    # Reset state
                     self.in_code_block = False
                     self.code_language = ""
                     self.code_buffer = ""
-                    self.buffer = self.buffer[end_match.end():]
-                else:
-                    # Still in code block, buffer it
-                    self.code_buffer += self.buffer
-                    self.buffer = ""
-                    break
+                    self.buffer = self.code_buffer[end_match.end():]
+                    self.lines_printed = 0
     
     def flush(self) -> None:
         """Flush any remaining content."""
-        if self.in_code_block and self.code_buffer:
-            # Unclosed code block - print what we have
+        # If we're in an unclosed code block, prettify what we have
+        if self.in_code_block and self.code_buffer.strip():
+            code_content = self.code_buffer.rstrip('\n')
+            code_lines = code_content.count('\n') + 1
+            lines_to_clear = code_lines + 1  # +1 for opening ```
+            
+            self._clear_lines(lines_to_clear)
+            
+            print(f"{C.DIM}```{self.code_language}{C.RST}")
             if PYGMENTS_AVAILABLE:
-                highlighted = _highlight_by_language(self.code_buffer, self.code_language)
-                print(highlighted, flush=True)
+                highlighted = _highlight_by_language(code_content, self.code_language)
+                print(highlighted)
             else:
-                print(self.code_buffer, end='', flush=True)
+                print(code_content)
             print(f"{C.DIM}```{C.RST}", flush=True)
-        elif self.buffer:
-            print(self.buffer, end='', flush=True)
+        
         self.buffer = ""
         self.code_buffer = ""
         self.in_code_block = False
+        self.lines_printed = 0
 
 def _print_highlighted_lines(content: str, filename: str, prefix: str = "", line_nums: bool = True, color_override: str = None) -> None:
     """Print content with syntax highlighting and optional line numbers."""
