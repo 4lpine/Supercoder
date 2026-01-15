@@ -172,7 +172,8 @@ G4F_FREE_MODELS = {
 
 # --- Native Tool Definitions ---
 NATIVE_TOOLS = [
-    {"type": "function", "function": {"name": "executePwsh", "description": "Execute a shell command", "parameters": {"type": "object", "properties": {"command": {"type": "string", "description": "Command to execute"}, "timeout": {"type": "integer", "description": "Timeout in seconds (default 60)"}}, "required": ["command"]}}},
+    {"type": "function", "function": {"name": "executePwsh", "description": "Execute a shell command inside Docker (Linux)", "parameters": {"type": "object", "properties": {"command": {"type": "string", "description": "Command to execute"}, "timeout": {"type": "integer", "description": "Timeout in seconds (default 60)"}}, "required": ["command"]}}},
+    {"type": "function", "function": {"name": "runOnHost", "description": "Execute a command on the Windows host machine (not in Docker). Use this for GUI apps, opening files with default programs, or Windows-specific commands.", "parameters": {"type": "object", "properties": {"command": {"type": "string", "description": "Windows command to execute on host"}, "timeout": {"type": "integer", "description": "Timeout in seconds (default 60)"}}, "required": ["command"]}}},
     {"type": "function", "function": {"name": "controlPwshProcess", "description": "Start or stop background processes", "parameters": {"type": "object", "properties": {"action": {"type": "string", "enum": ["start", "stop"], "description": "Action to perform"}, "command": {"type": "string", "description": "Command to run (for start)"}, "processId": {"type": "integer", "description": "Process ID (for stop)"}, "path": {"type": "string", "description": "Working directory (for start)"}}, "required": ["action"]}}},
     {"type": "function", "function": {"name": "listProcesses", "description": "List running background processes", "parameters": {"type": "object", "properties": {}, "required": []}}},
     {"type": "function", "function": {"name": "getProcessOutput", "description": "Get output from a background process", "parameters": {"type": "object", "properties": {"processId": {"type": "integer", "description": "Process ID"}, "lines": {"type": "integer", "description": "Number of lines to return"}}, "required": ["processId"]}}},
@@ -874,7 +875,7 @@ class Agent:
 def execute_tool(tool_call: dict) -> str:
     """Execute a tool call and return result"""
     from tools import (
-        execute_pwsh, control_pwsh_process, list_processes, get_process_output,
+        execute_pwsh, run_on_host, control_pwsh_process, list_processes, get_process_output,
         list_directory, read_file, read_multiple_files, read_code, file_search, grep_search,
         delete_file, fs_write, fs_append, str_replace, get_diagnostics, property_coverage,
         insert_lines, remove_lines, move_file, copy_file, create_directory, undo,
@@ -887,7 +888,7 @@ def execute_tool(tool_call: dict) -> str:
     args = tool_call.get("args", {})
 
     REQUIRED_PARAMS = {
-        "executePwsh": ["command"], "readFile": ["path"], "fsWrite": ["path", "content"],
+        "executePwsh": ["command"], "runOnHost": ["command"], "readFile": ["path"], "fsWrite": ["path", "content"],
         "fsAppend": ["path", "content"], "strReplace": ["path", "old", "new"],
         "deleteFile": ["path"], "getDiagnostics": ["path"], "fileSearch": ["pattern"],
         "grepSearch": ["pattern"], "getProcessOutput": ["processId"], "controlPwshProcess": ["action"],
@@ -902,6 +903,9 @@ def execute_tool(tool_call: dict) -> str:
     try:
         if name == "executePwsh":
             result = execute_pwsh(args["command"], args.get("timeout", 60))
+            return f"stdout: {result['stdout']}\nstderr: {result['stderr']}\nreturncode: {result['returncode']}"
+        elif name == "runOnHost":
+            result = run_on_host(args["command"], args.get("timeout", 60))
             return f"stdout: {result['stdout']}\nstderr: {result['stderr']}\nreturncode: {result['returncode']}"
         elif name == "controlPwshProcess":
             return json.dumps(control_pwsh_process(args["action"], args.get("command"), args.get("processId"), args.get("path")))

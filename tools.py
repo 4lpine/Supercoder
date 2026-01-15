@@ -74,6 +74,59 @@ class UndoManager:
 
 undo_manager = UndoManager()
 
+# --- Host Command Execution (runs on Windows host, not in Docker) ---
+def run_on_host(command: str, timeout: int = 60) -> Dict[str, Any]:
+    """
+    Execute a command on the Windows host machine (not inside Docker).
+    Useful for running GUI applications, opening files, etc.
+    """
+    import time as _time
+    
+    host_cmd_dir = os.environ.get("HOST_CMD_DIR")
+    if not host_cmd_dir:
+        return {'stdout': '', 'stderr': 'Host command execution not available (HOST_CMD_DIR not set)', 'returncode': -1}
+    
+    cmd_file = os.path.join(host_cmd_dir, "cmd.txt")
+    result_file = os.path.join(host_cmd_dir, "result.txt")
+    done_file = os.path.join(host_cmd_dir, "done.txt")
+    
+    # Get the Windows path for current directory
+    host_pwd = os.environ.get("HOST_PWD", "C:\\")
+    
+    try:
+        # Clean up any previous files
+        for f in [result_file, done_file]:
+            if os.path.exists(f):
+                os.remove(f)
+        
+        # Write command file
+        with open(cmd_file, 'w') as f:
+            f.write(f"{command}\n{host_pwd}\n")
+        
+        # Wait for result
+        start = _time.time()
+        while _time.time() - start < timeout:
+            if os.path.exists(done_file):
+                # Read result
+                if os.path.exists(result_file):
+                    with open(result_file, 'r', encoding='utf-8', errors='replace') as f:
+                        output = f.read()
+                else:
+                    output = ""
+                
+                # Clean up
+                for f in [result_file, done_file]:
+                    if os.path.exists(f):
+                        os.remove(f)
+                
+                return {'stdout': output, 'stderr': '', 'returncode': 0}
+            _time.sleep(0.1)
+        
+        return {'stdout': '', 'stderr': f'Timed out after {timeout}s', 'returncode': -1}
+    
+    except Exception as e:
+        return {'stdout': '', 'stderr': str(e), 'returncode': -1}
+
 # --- Shell Execution ---
 def execute_pwsh(command: str, timeout: int = 60) -> Dict[str, Any]:
     """Execute a shell command"""
