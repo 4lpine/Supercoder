@@ -15,6 +15,10 @@ from typing import Any, Dict, List, Optional, Tuple, Set
 # Enable arrow keys and command history
 try:
     import readline
+    # Ctrl+Backspace to delete word (sends \x17 in most terminals)
+    readline.parse_and_bind(r'"\x17": backward-kill-word')
+    # Also bind Ctrl+W (standard unix)
+    readline.parse_and_bind(r'"\C-w": backward-kill-word')
 except ImportError:
     pass  # Windows doesn't have readline, but Docker/Linux does
 
