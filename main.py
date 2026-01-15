@@ -445,6 +445,7 @@ def print_tool(name: str, args: Dict[str, Any], result: str, compact: bool = Tru
                 print(f"    {C.GRAY}{line[:150]}{C.RST}")
             if len(display.split('\n')) > 15:
                 print(f"    {C.GRAY}... ({len(display.split(chr(10))) - 15} more lines){C.RST}")
+    sys.stdout.flush()
 
 def _print_completion_box(summary: str, success: bool = True) -> None:
     """Print a nice completion box with the summary."""
@@ -476,6 +477,7 @@ def _print_completion_box(summary: str, success: bool = True) -> None:
         print(f"  {border_color}│{C.RST}  {line}{' ' * padding}{border_color}│{C.RST}")
     print(f"  {border_color}╰{'─' * 70}╯{C.RST}")
     print()
+    sys.stdout.flush()
 
 def build_continue_prompt(state: State, last_tools: List[str], had_content: bool) -> str:
     """Build a context-rich continue prompt based on what just happened."""
@@ -1188,6 +1190,7 @@ def run(agent: Agent, state: State) -> None:
                 had_content = bool(content)
                 if content:
                     print()
+                sys.stdout.flush()
                 
                 # Track tools used this turn
                 tools_used_this_turn = []
