@@ -66,20 +66,19 @@ You describe what you want in plain English, and SuperCoder figures out how to b
 
 | Feature | Cursor | Claude Code | SuperCoder |
 |---------|--------|-------------|------------|
-| Price | $20/month | $20-200/month | **Free** (or pay-per-use) |
+| Price | $20/month | $20-200/month | **Free** or pay-per-use |
 | Free tier | ❌ | ❌ | ✅ via g4f |
+| Model choice | Limited | Claude only | 50+ models |
 | Interface | VS Code fork | Terminal CLI | Terminal CLI |
-| Autonomous mode | ✅ Agent mode | ✅ | ✅ |
+| Autonomous mode | ✅ | ✅ | ✅ |
 | Multi-file editing | ✅ | ✅ | ✅ |
 | Runs commands | ✅ | ✅ | ✅ |
-| Isolated environment | ❌ | ❌ | ✅ Docker sandbox |
-| No subscription required | ❌ | ❌ | ✅ |
-| Works offline (free models) | ❌ | ❌ | ✅ |
+| Open source | ❌ | ❌ | ✅ |
 
 **Key differences:**
-- **Cursor** requires a $20/month subscription and locks you into their VS Code fork
-- **Claude Code** requires a Claude Pro subscription ($20/month minimum) just to use it
-- **SuperCoder** works completely free using g4f models, or pay-per-token with OpenRouter (often cheaper than subscriptions)
+- **Cursor** is great but requires $20/month and locks you into their VS Code fork
+- **Claude Code** is powerful but requires a Claude Pro subscription and only uses Claude models
+- **SuperCoder** lets you use 50+ models (GPT-4, Claude, Llama, Mistral, Gemini, etc.) — free via g4f or pay-per-token via OpenRouter
 
 ### How It Works
 
