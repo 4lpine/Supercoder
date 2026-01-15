@@ -15,10 +15,24 @@ from typing import Any, Dict, List, Optional, Tuple, Set
 # Enable arrow keys and command history
 try:
     import readline
-    # Ctrl+Backspace to delete word (sends \x17 in most terminals)
-    readline.parse_and_bind(r'"\x17": backward-kill-word')
-    # Also bind Ctrl+W (standard unix)
-    readline.parse_and_bind(r'"\C-w": backward-kill-word')
+    # Word deletion - try multiple escape codes for Ctrl+Backspace
+    readline.parse_and_bind(r'"\x7f": backward-kill-word')      # DEL (some terminals)
+    readline.parse_and_bind(r'"\x08": backward-kill-word')      # Ctrl+H / Backspace
+    readline.parse_and_bind(r'"\e[3;5~": backward-kill-word')   # Ctrl+Backspace (xterm)
+    readline.parse_and_bind(r'"\e\x7f": backward-kill-word')    # Alt+Backspace -> word delete
+    readline.parse_and_bind(r'"\C-h": backward-kill-word')      # Ctrl+H
+    
+    # Standard bindings (most already work, but explicit is better)
+    readline.parse_and_bind(r'"\C-w": backward-kill-word')      # Ctrl+W - delete word back
+    readline.parse_and_bind(r'"\C-u": unix-line-discard')       # Ctrl+U - delete line
+    readline.parse_and_bind(r'"\C-a": beginning-of-line')       # Ctrl+A - start of line
+    readline.parse_and_bind(r'"\C-e": end-of-line')             # Ctrl+E - end of line
+    readline.parse_and_bind(r'"\C-l": clear-screen')            # Ctrl+L - clear screen
+    readline.parse_and_bind(r'"\C-k": kill-line')               # Ctrl+K - delete to end
+    readline.parse_and_bind(r'"\C-y": yank')                    # Ctrl+Y - paste deleted
+    readline.parse_and_bind(r'"\eb": backward-word')            # Alt+B - back word
+    readline.parse_and_bind(r'"\ef": forward-word')             # Alt+F - forward word
+    readline.parse_and_bind(r'"\ed": kill-word')                # Alt+D - delete word forward
 except ImportError:
     pass  # Windows doesn't have readline, but Docker/Linux does
 
