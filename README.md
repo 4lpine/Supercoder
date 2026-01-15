@@ -117,7 +117,7 @@ C:\Projects\myapp> supercoder
 ...
 
 ╭──────────────────────────────────────────────────────────────────────╮
-│  ✓ COMPLETE                                                         │
+│  ✓ COMPLETE                                                          │
 ├──────────────────────────────────────────────────────────────────────┤
 │  Created Express API with JWT authentication, user registration,     │
 │  and login endpoints.                                                │
