@@ -145,7 +145,9 @@ When running GUI applications (games, desktop apps, anything with a window):
 - Use `runOnHost` NOT `executePwsh`
 - `executePwsh` runs inside Docker which has no display
 - `runOnHost` runs on the user's Windows machine where GUI can display
-- Examples: `runOnHost(command="python snake_game.py")`, `runOnHost(command="start notepad.exe")`
+- On Windows use `python` not `python3`
+- For GUI apps, use `start` to launch in new window: `runOnHost(command="start python snake_game.py")`
+- Examples: `runOnHost(command="start python game.py")`, `runOnHost(command="start notepad.exe")`
 
 Web Search (use when you need help or examples):
 - `webSearch(query, site?, maxResults?)` - Search the web for programming help
