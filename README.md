@@ -68,17 +68,20 @@ You describe what you want in plain English, and SuperCoder figures out how to b
 |---------|--------|-------------|------------|
 | Price | $20/month | $20-200/month | **Free** or pay-per-use |
 | Free tier | ❌ | ❌ | ✅ via g4f |
-| Model choice | Limited | Claude only | 50+ models |
-| Interface | VS Code fork | Terminal CLI | Terminal CLI |
-| Autonomous mode | ✅ | ✅ | ✅ |
-| Multi-file editing | ✅ | ✅ | ✅ |
-| Runs commands | ✅ | ✅ | ✅ |
+| Model choice | ~10 models | Claude only | **50+ models** |
 | Open source | ❌ | ❌ | ✅ |
+| Task planning | ❌ | ❌ | ✅ `plan` command |
+| Undo file changes | ❌ | ❌ | ✅ built-in |
+| File pinning | ❌ | ❌ | ✅ always in context |
+| Auto-verify code | ❌ | ❌ | ✅ syntax check after edits |
 
-**Key differences:**
-- **Cursor** is great but requires $20/month and locks you into their VS Code fork
-- **Claude Code** is powerful but requires a Claude Pro subscription and only uses Claude models
-- **SuperCoder** lets you use 50+ models (GPT-4, Claude, Llama, Mistral, Gemini, etc.) — free via g4f or pay-per-token via OpenRouter
+**What SuperCoder does that others don't:**
+- **50+ models** — Use GPT-4, Claude, Llama, Mistral, Gemini, DeepSeek, Qwen, and more. Switch models mid-conversation with `model <name>`
+- **Task planning** — Run `plan build a todo app` and SuperCoder generates requirements, design docs, and a task list. Then execute with `task next`
+- **Undo system** — Every file change is tracked. Made a mistake? Undo it
+- **File pinning** — Pin important files so they're always included in context, even across conversations
+- **Auto-verification** — Automatically runs `py_compile` after Python edits to catch syntax errors immediately
+- **Completely free** — Use g4f models with no API key, or pay-per-token with OpenRouter (often cheaper than subscriptions)
 
 ### How It Works
 
