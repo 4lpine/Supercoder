@@ -12,19 +12,29 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Set
 
-# Enable arrow keys and command history
-# Try gnureadline first (better terminal handling), fall back to readline
+# Try prompt_toolkit first (best terminal handling), fall back to readline
+PROMPT_TOOLKIT_AVAILABLE = False
+READLINE_AVAILABLE = False
+
 try:
-    import gnureadline as readline
-    READLINE_AVAILABLE = True
+    from prompt_toolkit import prompt as pt_prompt
+    from prompt_toolkit.history import FileHistory
+    from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+    from prompt_toolkit.styles import Style
+    PROMPT_TOOLKIT_AVAILABLE = True
 except ImportError:
+    # Fall back to readline
     try:
-        import readline
+        import gnureadline as readline
         READLINE_AVAILABLE = True
     except ImportError:
-        READLINE_AVAILABLE = False
+        try:
+            import readline
+            READLINE_AVAILABLE = True
+        except ImportError:
+            pass
 
-if READLINE_AVAILABLE:
+if READLINE_AVAILABLE and not PROMPT_TOOLKIT_AVAILABLE:
     # Use emacs mode
     readline.parse_and_bind('set editing-mode emacs')
     
@@ -215,28 +225,53 @@ def _build_prompt() -> str:
     line2 = f"{C.BPURPLE}└─{C.BRED}${C.RST} "
     return f"{line1}\n{line2}"
 
+# Global history for prompt_toolkit
+_pt_history = None
+
+def _get_pt_history():
+    global _pt_history
+    if _pt_history is None and PROMPT_TOOLKIT_AVAILABLE:
+        history_file = Path.home() / ".supercoder" / "history"
+        history_file.parent.mkdir(parents=True, exist_ok=True)
+        _pt_history = FileHistory(str(history_file))
+    return _pt_history
+
 def get_input(prompt: str = None) -> str:
     try:
-        # Clear any stale readline state before getting input
-        if READLINE_AVAILABLE:
-            try:
-                readline.set_startup_hook(lambda: readline.insert_text(''))
-            except:
-                pass
-        
         if prompt is None:
             prompt = _build_prompt()
-            # Pass full prompt to input() so backspace can't delete it
-            line = input(prompt)
         else:
-            line = input(_s(prompt, C.YELLOW))
+            prompt = _s(prompt, C.YELLOW)
         
-        # Clear startup hook
-        if READLINE_AVAILABLE:
+        if PROMPT_TOOLKIT_AVAILABLE:
+            # Use prompt_toolkit for better terminal handling
             try:
-                readline.set_startup_hook(None)
-            except:
-                pass
+                # Strip ANSI codes for prompt_toolkit (it handles styling differently)
+                # But we want to print our styled prompt first
+                print(prompt, end='')
+                line = pt_prompt(
+                    '',  # Empty prompt since we printed it
+                    history=_get_pt_history(),
+                    auto_suggest=AutoSuggestFromHistory(),
+                )
+            except (EOFError, KeyboardInterrupt):
+                print()
+                return "quit"
+        else:
+            # Fall back to readline/basic input
+            if READLINE_AVAILABLE:
+                try:
+                    readline.set_startup_hook(lambda: readline.insert_text(''))
+                except:
+                    pass
+            
+            line = input(prompt)
+            
+            if READLINE_AVAILABLE:
+                try:
+                    readline.set_startup_hook(None)
+                except:
+                    pass
         
         stripped = line.strip()
         if stripped == "<<<" or stripped.startswith('"""'):
@@ -1438,15 +1473,16 @@ def run(agent: Agent, state: State) -> None:
     global _last_interrupt
     import time as _time
     
-    # Set up command history with readline
-    history_file = Path.home() / ".supercoder" / "history"
-    try:
-        history_file.parent.mkdir(parents=True, exist_ok=True)
-        if history_file.exists():
-            readline.read_history_file(str(history_file))
-        readline.set_history_length(1000)
-    except:
-        pass  # readline not available or history file issue
+    # Set up command history (only for readline fallback, prompt_toolkit handles its own)
+    if READLINE_AVAILABLE and not PROMPT_TOOLKIT_AVAILABLE:
+        history_file = Path.home() / ".supercoder" / "history"
+        try:
+            history_file.parent.mkdir(parents=True, exist_ok=True)
+            if history_file.exists():
+                readline.read_history_file(str(history_file))
+            readline.set_history_length(1000)
+        except:
+            pass
     
     header()
     

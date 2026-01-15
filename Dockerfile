@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install dependencies with retries and longer timeout
-RUN pip install --no-cache-dir --timeout 120 --retries 5 requests colorama pygments g4f gnureadline
+RUN pip install --no-cache-dir --timeout 120 --retries 5 requests colorama pygments g4f gnureadline prompt_toolkit
 
 # Copy app files
 COPY main.py Agentic.py tools.py ./
