@@ -16,7 +16,7 @@ An autonomous AI coding agent that runs in your terminal. Give it a task, and it
 
 ### One-Click Install (Windows)
 
-1. **Download** [`setup.exe`](https://github.com/4lpine/Supercoder/raw/main/bin/setup.exe)
+1. **Download** [`installer.exe`](https://github.com/4lpine/Supercoder/raw/main/bin/installer.exe)
 2. **Run it**
 
 That's it. The installer handles everything:
@@ -40,7 +40,7 @@ supercoder
 
 ### Updating
 
-Just run `setup.exe` again. It will download the latest version and rebuild everything.
+Just run `installer.exe` again. It will download the latest version and rebuild everything.
 
 ### Uninstalling
 
@@ -353,13 +353,13 @@ Then use `task next` to execute each step.
 Start Docker Desktop from the Start menu and wait for it to fully load (whale icon in system tray).
 
 ### "SuperCoder not installed"
-Run `setup.exe` again to rebuild the Docker image.
+Run `installer.exe` again to rebuild the Docker image.
 
 ### Slow first startup
 The first run downloads the Python base image (~150MB). Subsequent runs are instant.
 
 ### Can't type after task completes
-This was a bug that's been fixed. Run `setup.exe` to update.
+This was a bug that's been fixed. Run `installer.exe` to update.
 
 ### Commands not found after install
 Open a **new** terminal window. The PATH update only affects new terminals.
