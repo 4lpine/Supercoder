@@ -134,10 +134,18 @@ Code Analysis:
 - `findReferences(symbol, path?)` - Find symbol references
 
 Shell & Process:
-- `executePwsh(command, timeout?)` - Run shell command
+- `executePwsh(command, timeout?)` - Run shell command inside Docker (Linux). Use for CLI tools, scripts, builds.
+- `runOnHost(command, timeout?)` - Run command on Windows host. **USE THIS FOR GUI APPS** (pygame, tkinter, electron, browsers, file explorer, etc.) since Docker cannot display windows.
 - `controlPwshProcess(action, command?, processId?, path?)` - Background processes
 - `listProcesses()` - List running processes
 - `getProcessOutput(processId, lines?)` - Get process output
+
+**IMPORTANT: GUI Applications**
+When running GUI applications (games, desktop apps, anything with a window):
+- Use `runOnHost` NOT `executePwsh`
+- `executePwsh` runs inside Docker which has no display
+- `runOnHost` runs on the user's Windows machine where GUI can display
+- Examples: `runOnHost(command="python snake_game.py")`, `runOnHost(command="start notepad.exe")`
 
 Web Search (use when you need help or examples):
 - `webSearch(query, site?, maxResults?)` - Search the web for programming help
