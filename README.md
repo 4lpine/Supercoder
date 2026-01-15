@@ -68,7 +68,7 @@ You describe what you want in plain English, and SuperCoder figures out how to b
 |---------|--------|-------------|------------|
 | Price | $20/month | $20-200/month | **Free** or pay-per-use |
 | Free tier | ❌ | ❌ | ✅ via g4f |
-| Model choice | ~10 models | Claude only | **50+ models** |
+| Model choice | ~10 models | Claude only | **350+ models** |
 | Open source | ❌ | ❌ | ✅ |
 | Task planning | ❌ | ❌ | ✅ `plan` command |
 | Undo file changes | ❌ | ❌ | ✅ built-in |
@@ -76,7 +76,7 @@ You describe what you want in plain English, and SuperCoder figures out how to b
 | Auto-verify code | ❌ | ❌ | ✅ syntax check after edits |
 
 **What SuperCoder does that others don't:**
-- **50+ models** — Use GPT-4, Claude, Llama, Mistral, Gemini, DeepSeek, Qwen, and more. Switch models mid-conversation with `model <name>`
+- **350+ models** — Use GPT-4, Claude, Llama, Mistral, Gemini, DeepSeek, Qwen, and more. Switch models mid-conversation with `model <name>`
 - **Task planning** — Run `plan build a todo app` and SuperCoder generates requirements, design docs, and a task list. Then execute with `task next`
 - **Undo system** — Every file change is tracked. Made a mistake? Undo it
 - **File pinning** — Pin important files so they're always included in context, even across conversations
