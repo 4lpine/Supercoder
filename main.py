@@ -683,6 +683,38 @@ def cmd_clear(state: State, agent: Agent, args: str) -> None:
     state.reset_task()
     status("Conversation cleared", "success")
 
+@cmd("cd", "Change directory")
+def cmd_cd(state: State, agent: Agent, args: str) -> None:
+    path = args.strip()
+    if not path:
+        # Show current directory
+        host_pwd = os.environ.get("HOST_PWD", os.getcwd())
+        status(f"Current directory: {host_pwd}", "info")
+        return
+    
+    try:
+        # Handle ~ for home directory
+        if path.startswith("~"):
+            path = str(Path.home()) + path[1:]
+        
+        # Resolve and change directory
+        new_path = Path(path).resolve()
+        if not new_path.exists():
+            status(f"Directory not found: {path}", "error")
+            return
+        if not new_path.is_dir():
+            status(f"Not a directory: {path}", "error")
+            return
+        
+        os.chdir(new_path)
+        
+        # Update HOST_PWD to reflect the change (for prompt display)
+        os.environ["HOST_PWD"] = str(new_path)
+        
+        status(f"Changed to: {new_path}", "success")
+    except Exception as e:
+        status(f"Error: {e}", "error")
+
 @cmd("auto", "Toggle autonomous mode (auto on|off) or set cap (auto cap N)")
 def cmd_auto(state: State, agent: Agent, args: str) -> None:
     parts = args.lower().split()
