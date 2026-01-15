@@ -15,6 +15,16 @@ from typing import Any, Dict, List, Optional, Tuple, Set
 # Enable arrow keys and command history
 try:
     import readline
+    
+    # Set editing mode to emacs (default, but explicit)
+    readline.parse_and_bind('set editing-mode emacs')
+    
+    # Fix for arrow keys appending instead of replacing - clear line before history
+    readline.parse_and_bind(r'"\e[A": previous-history')        # Up arrow
+    readline.parse_and_bind(r'"\e[B": next-history')            # Down arrow
+    readline.parse_and_bind(r'"\e[C": forward-char')            # Right arrow
+    readline.parse_and_bind(r'"\e[D": backward-char')           # Left arrow
+    
     # Word deletion - try multiple escape codes for Ctrl+Backspace
     readline.parse_and_bind(r'"\x7f": backward-kill-word')      # DEL (some terminals)
     readline.parse_and_bind(r'"\x08": backward-kill-word')      # Ctrl+H / Backspace
@@ -683,19 +693,36 @@ def cmd_clear(state: State, agent: Agent, args: str) -> None:
     state.reset_task()
     status("Conversation cleared", "success")
 
-@cmd("cd", "Change directory")
+@cmd("cd", "Change directory (within workspace)")
 def cmd_cd(state: State, agent: Agent, args: str) -> None:
     path = args.strip()
+    host_pwd = os.environ.get("HOST_PWD", "")
+    
     if not path:
         # Show current directory
-        host_pwd = os.environ.get("HOST_PWD", os.getcwd())
-        status(f"Current directory: {host_pwd}", "info")
+        if host_pwd:
+            status(f"Current directory: {host_pwd}", "info")
+        else:
+            status(f"Current directory: {os.getcwd()}", "info")
         return
     
     try:
-        # Handle ~ for home directory
-        if path.startswith("~"):
+        # Handle special cases
+        if path == "~":
+            path = str(Path.home())
+        elif path.startswith("~"):
             path = str(Path.home()) + path[1:]
+        elif path == "..":
+            path = str(Path.cwd().parent)
+        elif path == "-":
+            # Go to workspace root
+            path = "/workspace"
+        
+        # Check if user is trying to use a Windows path (won't work in Docker)
+        if re.match(r'^[A-Za-z]:[/\\]', path):
+            status(f"Windows paths don't work inside Docker. Use relative paths or 'cd ..' to navigate.", "warning")
+            status(f"Your workspace is mounted at /workspace (Windows: {host_pwd})", "info")
+            return
         
         # Resolve and change directory
         new_path = Path(path).resolve()
@@ -708,10 +735,25 @@ def cmd_cd(state: State, agent: Agent, args: str) -> None:
         
         os.chdir(new_path)
         
-        # Update HOST_PWD to reflect the change (for prompt display)
-        os.environ["HOST_PWD"] = str(new_path)
+        # Update HOST_PWD to reflect the change relative to workspace
+        # If we're in /workspace/subdir, update HOST_PWD accordingly
+        workspace_root = Path("/workspace")
+        if new_path == workspace_root or str(new_path).startswith("/workspace"):
+            # Calculate relative path from workspace
+            try:
+                rel_path = new_path.relative_to(workspace_root)
+                if host_pwd:
+                    # Parse the original Windows path and append relative
+                    base_host = os.environ.get("HOST_PWD_ROOT", host_pwd)
+                    if str(rel_path) == ".":
+                        os.environ["HOST_PWD"] = base_host
+                    else:
+                        os.environ["HOST_PWD"] = str(Path(base_host) / rel_path)
+            except ValueError:
+                pass
         
-        status(f"Changed to: {new_path}", "success")
+        display_path = os.environ.get("HOST_PWD", str(new_path))
+        status(f"Changed to: {display_path}", "success")
     except Exception as e:
         status(f"Error: {e}", "error")
 
