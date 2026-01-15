@@ -722,63 +722,78 @@ def cmd_clear(state: State, agent: Agent, args: str) -> None:
 def cmd_cd(state: State, agent: Agent, args: str) -> None:
     path = args.strip()
     host_pwd = os.environ.get("HOST_PWD", "")
+    host_root = os.environ.get("HOST_PWD_ROOT", host_pwd)
+    current_linux_path = Path.cwd()
+    workspace_root = Path("/workspace")
     
     if not path:
         # Show current directory
         if host_pwd:
             status(f"Current directory: {host_pwd}", "info")
         else:
-            status(f"Current directory: {os.getcwd()}", "info")
+            status(f"Current directory: {current_linux_path}", "info")
         return
     
     try:
-        # Handle special cases
-        if path == "~":
-            path = str(Path.home())
-        elif path.startswith("~"):
-            path = str(Path.home()) + path[1:]
-        elif path == "..":
-            path = str(Path.cwd().parent)
-        elif path == "-":
-            # Go to workspace root
-            path = "/workspace"
-        
-        # Check if user is trying to use a Windows path (won't work in Docker)
+        # Check if user is trying to use a Windows path
         if re.match(r'^[A-Za-z]:[/\\]', path):
-            status(f"Windows paths don't work inside Docker. Use relative paths or 'cd ..' to navigate.", "warning")
-            status(f"Your workspace is mounted at /workspace (Windows: {host_pwd})", "info")
+            status(f"Windows paths don't work inside Docker.", "warning")
+            status(f"Use relative paths like: cd subdir, cd .., cd -", "info")
+            status(f"Your workspace root: {host_root}", "info")
             return
         
-        # Resolve and change directory
-        new_path = Path(path).resolve()
-        if not new_path.exists():
+        # Handle special cases
+        if path == "~" or path == "-":
+            # Go to workspace root
+            target_path = workspace_root
+        elif path == "..":
+            # Go up one directory, but don't go above workspace root
+            parent = current_linux_path.parent
+            if str(current_linux_path) == "/workspace" or not str(parent).startswith("/workspace"):
+                status(f"Already at workspace root: {host_root}", "warning")
+                return
+            target_path = parent
+        elif path.startswith("~"):
+            # ~/subdir means workspace/subdir
+            target_path = workspace_root / path[2:]  # Skip ~/ 
+        elif path.startswith("/"):
+            # Absolute Linux path - check if it's within workspace
+            target_path = Path(path)
+            if not str(target_path).startswith("/workspace"):
+                status(f"Can only navigate within workspace", "warning")
+                return
+        else:
+            # Relative path
+            target_path = (current_linux_path / path).resolve()
+        
+        # Verify target is within workspace
+        target_path = target_path.resolve()
+        if not str(target_path).startswith("/workspace"):
+            status(f"Can only navigate within workspace: {host_root}", "warning")
+            return
+        
+        if not target_path.exists():
             status(f"Directory not found: {path}", "error")
             return
-        if not new_path.is_dir():
+        if not target_path.is_dir():
             status(f"Not a directory: {path}", "error")
             return
         
-        os.chdir(new_path)
+        # Change directory
+        os.chdir(target_path)
         
-        # Update HOST_PWD to reflect the change relative to workspace
-        # If we're in /workspace/subdir, update HOST_PWD accordingly
-        workspace_root = Path("/workspace")
-        if new_path == workspace_root or str(new_path).startswith("/workspace"):
-            # Calculate relative path from workspace
-            try:
-                rel_path = new_path.relative_to(workspace_root)
-                if host_pwd:
-                    # Parse the original Windows path and append relative
-                    base_host = os.environ.get("HOST_PWD_ROOT", host_pwd)
-                    if str(rel_path) == ".":
-                        os.environ["HOST_PWD"] = base_host
-                    else:
-                        os.environ["HOST_PWD"] = str(Path(base_host) / rel_path)
-            except ValueError:
-                pass
+        # Update HOST_PWD to show Windows path
+        try:
+            rel_path = target_path.relative_to(workspace_root)
+            if str(rel_path) == ".":
+                os.environ["HOST_PWD"] = host_root
+            else:
+                # Convert forward slashes for Windows display
+                os.environ["HOST_PWD"] = str(Path(host_root) / rel_path)
+        except ValueError:
+            os.environ["HOST_PWD"] = str(target_path)
         
-        display_path = os.environ.get("HOST_PWD", str(new_path))
-        status(f"Changed to: {display_path}", "success")
+        status(f"Changed to: {os.environ['HOST_PWD']}", "success")
     except Exception as e:
         status(f"Error: {e}", "error")
 
