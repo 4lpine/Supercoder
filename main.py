@@ -12,6 +12,12 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Set
 
+# Enable arrow keys and command history
+try:
+    import readline
+except ImportError:
+    pass  # Windows doesn't have readline, but Docker/Linux does
+
 import tools
 from Agentic import Agent, execute_tool, MODEL_LIMITS, TokenManager, G4F_FREE_MODELS, G4F_AVAILABLE
 
@@ -935,6 +941,11 @@ def cmd_tokens(state: State, agent: Agent, args: str) -> None:
 
 @cmd("quit", "Exit supercoder", shortcuts=["exit", "q"])
 def cmd_quit(state: State, agent: Agent, args: str) -> None:
+    # Save command history
+    try:
+        readline.write_history_file(str(Path.home() / ".supercoder" / "history"))
+    except:
+        pass
     print(f"\n  {C.BPURPLE}Goodbye!{C.RST}\n")
     sys.exit(0)
 
@@ -1132,6 +1143,17 @@ def _check_and_prompt_tokens(agent: Agent) -> None:
 def run(agent: Agent, state: State) -> None:
     global _last_interrupt
     import time as _time
+    
+    # Set up command history with readline
+    history_file = Path.home() / ".supercoder" / "history"
+    try:
+        history_file.parent.mkdir(parents=True, exist_ok=True)
+        if history_file.exists():
+            readline.read_history_file(str(history_file))
+        readline.set_history_length(1000)
+    except:
+        pass  # readline not available or history file issue
+    
     header()
     
     # Show help on startup
@@ -1261,6 +1283,11 @@ def run(agent: Agent, state: State) -> None:
         except KeyboardInterrupt:
             now = _time.time()
             if now - _last_interrupt < _INTERRUPT_WINDOW:
+                # Save command history
+                try:
+                    readline.write_history_file(str(Path.home() / ".supercoder" / "history"))
+                except:
+                    pass
                 print(f"\n\n  {C.BPURPLE}Goodbye!{C.RST}\n")
                 sys.exit(0)
             else:
