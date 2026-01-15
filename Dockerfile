@@ -6,7 +6,7 @@ WORKDIR /app
 RUN pip install --no-cache-dir --timeout 120 --retries 5 requests colorama pygments g4f
 
 # Copy app files
-COPY supercoder.py Agentic.py tools.py ./
+COPY main.py Agentic.py tools.py ./
 COPY Agents/ ./Agents/
 
 # Set up volume mount point for user's projects
@@ -14,4 +14,4 @@ VOLUME /workspace
 WORKDIR /workspace
 
 # Run supercoder
-ENTRYPOINT ["python", "/app/supercoder.py"]
+ENTRYPOINT ["python", "/app/main.py"]
