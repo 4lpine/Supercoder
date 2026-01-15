@@ -25,10 +25,10 @@ except ImportError:
         READLINE_AVAILABLE = False
 
 if READLINE_AVAILABLE:
-    # Set editing mode to emacs (default, but explicit)
+    # Use emacs mode
     readline.parse_and_bind('set editing-mode emacs')
     
-    # Standard history navigation
+    # History navigation
     readline.parse_and_bind(r'"\e[A": previous-history')        # Up arrow
     readline.parse_and_bind(r'"\e[B": next-history')            # Down arrow
     readline.parse_and_bind(r'"\eOA": previous-history')        # Up arrow (alternate)
@@ -36,26 +36,23 @@ if READLINE_AVAILABLE:
     readline.parse_and_bind(r'"\e[C": forward-char')            # Right arrow
     readline.parse_and_bind(r'"\e[D": backward-char')           # Left arrow
     
-    # Word deletion - try multiple escape codes for Ctrl+Backspace
-    readline.parse_and_bind(r'"\x7f": backward-kill-word')      # DEL (some terminals)
-    readline.parse_and_bind(r'"\x08": backward-kill-word')      # Ctrl+H / Backspace
-    readline.parse_and_bind(r'"\e[3;5~": backward-kill-word')   # Ctrl+Backspace (xterm)
-    readline.parse_and_bind(r'"\e\x7f": backward-kill-word')    # Alt+Backspace -> word delete
-    readline.parse_and_bind(r'"\C-h": backward-kill-word')      # Ctrl+H
+    # IMPORTANT: Backspace should delete ONE char, not a word!
+    readline.parse_and_bind(r'"\x7f": backward-delete-char')    # DEL/Backspace - delete ONE char
+    readline.parse_and_bind(r'"\x08": backward-delete-char')    # Ctrl+H - delete ONE char
     
-    # Standard bindings
+    # Word deletion requires Ctrl+W or Alt+Backspace
     readline.parse_and_bind(r'"\C-w": backward-kill-word')      # Ctrl+W - delete word back
-    readline.parse_and_bind(r'"\C-u": unix-line-discard')       # Ctrl+U - delete line
+    readline.parse_and_bind(r'"\e\x7f": backward-kill-word')    # Alt+Backspace - delete word
+    readline.parse_and_bind(r'"\e[3;5~": backward-kill-word')   # Ctrl+Backspace (xterm)
+    
+    # Line editing
+    readline.parse_and_bind(r'"\C-u": unix-line-discard')       # Ctrl+U - delete entire line
     readline.parse_and_bind(r'"\C-a": beginning-of-line')       # Ctrl+A - start of line
     readline.parse_and_bind(r'"\C-e": end-of-line')             # Ctrl+E - end of line
     readline.parse_and_bind(r'"\C-l": clear-screen')            # Ctrl+L - clear screen
     readline.parse_and_bind(r'"\C-k": kill-line')               # Ctrl+K - delete to end
-    readline.parse_and_bind(r'"\C-y": yank')                    # Ctrl+Y - paste deleted
-    readline.parse_and_bind(r'"\eb": backward-word')            # Alt+B - back word
-    readline.parse_and_bind(r'"\ef": forward-word')             # Alt+F - forward word
-    readline.parse_and_bind(r'"\ed": kill-word')                # Alt+D - delete word forward
     
-    # Ctrl+P/N for history (works better in some terminals)
+    # History with Ctrl+P/N
     readline.parse_and_bind(r'"\C-p": previous-history')        # Ctrl+P - previous
     readline.parse_and_bind(r'"\C-n": next-history')            # Ctrl+N - next
 
