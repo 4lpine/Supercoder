@@ -64,14 +64,22 @@ You describe what you want in plain English, and SuperCoder figures out how to b
 
 ### Why SuperCoder?
 
-| Feature | ChatGPT/Claude | GitHub Copilot | SuperCoder |
-|---------|----------------|----------------|------------|
-| Writes code | ✅ | ✅ | ✅ |
-| Reads your files | ❌ | Limited | ✅ Full access |
-| Creates files | ❌ | ❌ | ✅ |
-| Runs commands | ❌ | ❌ | ✅ |
-| Works autonomously | ❌ | ❌ | ✅ |
-| Free tier available | Limited | ❌ | ✅ |
+| Feature | Cursor | Claude Code | SuperCoder |
+|---------|--------|-------------|------------|
+| Price | $20/month | $20-200/month | **Free** (or pay-per-use) |
+| Free tier | ❌ | ❌ | ✅ via g4f |
+| Interface | VS Code fork | Terminal CLI | Terminal CLI |
+| Autonomous mode | ✅ Agent mode | ✅ | ✅ |
+| Multi-file editing | ✅ | ✅ | ✅ |
+| Runs commands | ✅ | ✅ | ✅ |
+| Isolated environment | ❌ | ❌ | ✅ Docker sandbox |
+| No subscription required | ❌ | ❌ | ✅ |
+| Works offline (free models) | ❌ | ❌ | ✅ |
+
+**Key differences:**
+- **Cursor** requires a $20/month subscription and locks you into their VS Code fork
+- **Claude Code** requires a Claude Pro subscription ($20/month minimum) just to use it
+- **SuperCoder** works completely free using g4f models, or pay-per-token with OpenRouter (often cheaper than subscriptions)
 
 ### How It Works
 
