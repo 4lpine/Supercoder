@@ -281,25 +281,25 @@ Project-specific tasks are stored in `.supercoder/tasks.md` in your project fold
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     Your Windows Machine                     │
+│                     Your Windows Machine                    │
 │                                                             │
 │  C:\Projects\myapp\  ←──────────────────────┐               │
 │                                             │               │
 │  ┌─────────────────────────────────────────┐│               │
 │  │           Docker Container              ││               │
 │  │                                         ││               │
-│  │  ┌─────────────────────────────────┐   ││               │
-│  │  │         SuperCoder              │   ││  mounted as   │
-│  │  │                                 │   ││  /workspace   │
-│  │  │  • main.py (UI & orchestration) │   ││               │
-│  │  │  • Agentic.py (AI interface)    │   │◄───────────────┘
-│  │  │  • tools.py (file/shell tools)  │   │                 │
-│  │  │                                 │   │                 │
-│  │  └─────────────────────────────────┘   │                 │
-│  │                                         │                 │
-│  │  Python 3.12 + dependencies             │                 │
-│  │  Linux (Debian)                         │                 │
-│  └─────────────────────────────────────────┘                 │
+│  │  ┌─────────────────────────────────┐    ││               │
+│  │  │         SuperCoder              │    ││  mounted as   │
+│  │  │                                 │    ││  /workspace   │
+│  │  │  • main.py (UI & orchestration) │    ││               │
+│  │  │  • Agentic.py (AI interface)    │    │◄───────────────┘
+│  │  │  • tools.py (file/shell tools)  │    │                │
+│  │  │                                 │    │                │
+│  │  └─────────────────────────────────┘    │                │
+│  │                                         │                │
+│  │  Python 3.12 + dependencies             │                │
+│  │  Linux (Debian)                         │                │
+│  └─────────────────────────────────────────┘                │
 └─────────────────────────────────────────────────────────────┘
 ```
 
