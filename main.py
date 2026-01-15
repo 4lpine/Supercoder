@@ -541,138 +541,167 @@ def _highlight_by_language(code: str, language: str) -> str:
         return code
 
 class StreamingHighlighter:
-    """Handles streaming output - shows raw text immediately, then prettifies code blocks."""
+    """Handles streaming output with thinking animation for tool calls."""
     
     def __init__(self):
         self.buffer = ""
         self.in_code_block = False
         self.code_language = ""
         self.code_buffer = ""
-        self.code_start_line = 0  # Track where code block started for rewriting
+        self.code_start_line = 0
         self.lines_printed = 0
         self.total_chars = 0
-        self.last_visible_time = time.time()
-        self.spinner_shown = False
-        self.spinner_chars = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+        self.thinking_chars = 0  # Chars in current thinking phase
+        self.spinner_chars = "⣾⣽⣻⢿⡿⣟⣯⣷"
         self.spinner_idx = 0
+        self.in_tool_call = False
+        self.tool_call_buffer = ""
+        self.last_update = time.time()
+    
+    def _clear_line(self) -> None:
+        """Clear current line."""
+        sys.stdout.write('\r\033[2K')
+        sys.stdout.flush()
     
     def _clear_lines(self, n: int) -> None:
-        """Clear n lines above cursor (for rewriting code blocks)."""
+        """Clear n lines above cursor."""
         if n <= 0:
             return
-        # Move up n lines and clear each
         for _ in range(n):
-            sys.stdout.write('\033[A')  # Move up
-            sys.stdout.write('\033[2K')  # Clear line
-        sys.stdout.write('\r')  # Return to start of line
+            sys.stdout.write('\033[A\033[2K')
+        sys.stdout.write('\r')
         sys.stdout.flush()
     
-    def _clear_spinner(self) -> None:
-        """Clear the spinner line if shown."""
-        if self.spinner_shown:
-            sys.stdout.write('\r\033[2K')  # Clear current line
-            sys.stdout.flush()
-            self.spinner_shown = False
-    
-    def _show_spinner(self) -> None:
-        """Show/update the token counter spinner."""
+    def _show_thinking(self) -> None:
+        """Show thinking animation with token count."""
         self.spinner_idx = (self.spinner_idx + 1) % len(self.spinner_chars)
         spinner = self.spinner_chars[self.spinner_idx]
-        # Estimate tokens (~4 chars per token)
-        tokens = self.total_chars // 4
-        sys.stdout.write(f'\r{C.DIM}{spinner} Generating... {tokens} tokens{C.RST}')
+        tokens = self.thinking_chars // 4
+        sys.stdout.write(f'\r{C.CYAN}{spinner}{C.RST} {C.DIM}Thinking... {tokens} tokens{C.RST}  ')
         sys.stdout.flush()
-        self.spinner_shown = True
     
     def process_chunk(self, chunk: str) -> None:
-        """Process a streaming chunk - print raw immediately."""
+        """Process a streaming chunk."""
         self.total_chars += len(chunk)
+        self.buffer += chunk
         
-        # Check if chunk has visible content (not just tool call JSON)
-        visible = chunk.strip() and not chunk.strip().startswith('{"tool"') and not chunk.strip().startswith('```tool_call')
+        # Detect tool_call blocks
+        if '```tool_call' in self.buffer and not self.in_tool_call:
+            self.in_tool_call = True
+            self.tool_call_buffer = ""
+            self.thinking_chars = 0
+            # Print any text before the tool call
+            idx = self.buffer.find('```tool_call')
+            if idx > 0:
+                pre_text = self.buffer[:idx]
+                if pre_text.strip():
+                    print(pre_text, end='', flush=True)
+            self.buffer = self.buffer[idx:]
         
-        if visible:
-            self._clear_spinner()
-            # Always print raw chunk immediately for responsiveness
-            print(chunk, end='', flush=True)
-            self.last_visible_time = time.time()
+        if self.in_tool_call:
+            self.tool_call_buffer += chunk
+            self.thinking_chars += len(chunk)
             
-            # Track for potential prettification
-            self.buffer += chunk
+            # Update thinking animation periodically
+            now = time.time()
+            if now - self.last_update > 0.05:
+                self._show_thinking()
+                self.last_update = now
             
-            # Count newlines for line tracking
-            self.lines_printed += chunk.count('\n')
-            
-            # Check if we just completed a code block
+            # Check if tool call ended
+            if '```' in self.tool_call_buffer[12:]:  # Skip opening ```tool_call
+                self._clear_line()
+                self.in_tool_call = False
+                # Extract what comes after the closing ```
+                match = re.search(r'```tool_call.*?```(.*)$', self.tool_call_buffer, re.DOTALL)
+                if match:
+                    self.buffer = match.group(1)
+                else:
+                    self.buffer = ""
+                self.tool_call_buffer = ""
+        else:
+            # Regular text - check for code blocks
             if not self.in_code_block:
-                # Look for start of code block
                 match = re.search(r'```(\w*)\n', self.buffer)
                 if match:
+                    # Print text before code block
+                    pre_text = self.buffer[:match.start()]
+                    if pre_text:
+                        print(pre_text, end='', flush=True)
+                    print(f"```{match.group(1)}\n", end='', flush=True)
+                    
                     self.in_code_block = True
                     self.code_language = match.group(1) or "text"
-                    self.code_start_line = self.lines_printed - self.buffer[match.end():].count('\n') - 1
                     self.code_buffer = self.buffer[match.end():]
+                    self.code_start_line = self.code_buffer.count('\n')
                     self.buffer = ""
+                    self.lines_printed = 1 + self.code_start_line
+                else:
+                    # Just print regular text
+                    if chunk and not self.buffer.endswith('`'):  # Don't print partial ``` 
+                        # Print everything except last 3 chars (might be start of ```)
+                        safe_len = max(0, len(self.buffer) - 3)
+                        if safe_len > 0:
+                            to_print = self.buffer[:safe_len]
+                            print(to_print, end='', flush=True)
+                            self.buffer = self.buffer[safe_len:]
             else:
-                # Inside code block, accumulate
                 self.code_buffer += chunk
+                self.lines_printed += chunk.count('\n')
+                print(chunk, end='', flush=True)
                 
                 # Check for end of code block
                 if '```' in self.code_buffer:
-                    end_match = re.search(r'```', self.code_buffer)
-                    if end_match:
-                        code_content = self.code_buffer[:end_match.start()].rstrip('\n')
-                        
-                        # Calculate how many lines to clear (code + opening ``` + closing ```)
-                        code_lines = code_content.count('\n') + 1
-                        lines_to_clear = code_lines + 2  # +2 for ``` markers
-                        
-                        # Clear the raw code block
-                        self._clear_lines(lines_to_clear)
-                        
-                        # Print prettified version
-                        print(f"{C.DIM}```{self.code_language}{C.RST}")
-                        if PYGMENTS_AVAILABLE and code_content.strip():
-                            highlighted = _highlight_by_language(code_content, self.code_language)
-                            print(highlighted)
-                        else:
-                            print(code_content)
-                        print(f"{C.DIM}```{C.RST}", flush=True)
-                        
-                        # Reset state
-                        self.in_code_block = False
-                        self.code_language = ""
-                        self.code_buffer = ""
-                        self.buffer = self.code_buffer[end_match.end():]
-                        self.lines_printed = 0
-        else:
-            # No visible output - show spinner with token count
-            self._show_spinner()
+                    end_idx = self.code_buffer.find('```')
+                    code_content = self.code_buffer[:end_idx].rstrip('\n')
+                    after_block = self.code_buffer[end_idx + 3:]
+                    
+                    # Calculate lines to clear
+                    code_lines = code_content.count('\n') + 1
+                    lines_to_clear = code_lines + 2
+                    
+                    self._clear_lines(lines_to_clear)
+                    
+                    # Print prettified
+                    print(f"{C.DIM}```{self.code_language}{C.RST}")
+                    if PYGMENTS_AVAILABLE and code_content.strip():
+                        print(_highlight_by_language(code_content, self.code_language))
+                    else:
+                        print(code_content)
+                    print(f"{C.DIM}```{C.RST}", flush=True)
+                    
+                    self.in_code_block = False
+                    self.code_language = ""
+                    self.code_buffer = ""
+                    self.buffer = after_block
+                    self.lines_printed = 0
     
     def flush(self) -> None:
-        """Flush any remaining content."""
-        self._clear_spinner()
+        """Flush remaining content."""
+        self._clear_line()
         
-        # If we're in an unclosed code block, prettify what we have
+        # Print any remaining buffer
+        if self.buffer.strip():
+            print(self.buffer, end='', flush=True)
+        
+        # Handle unclosed code block
         if self.in_code_block and self.code_buffer.strip():
             code_content = self.code_buffer.rstrip('\n')
             code_lines = code_content.count('\n') + 1
-            lines_to_clear = code_lines + 1  # +1 for opening ```
-            
-            self._clear_lines(lines_to_clear)
+            self._clear_lines(code_lines + 1)
             
             print(f"{C.DIM}```{self.code_language}{C.RST}")
             if PYGMENTS_AVAILABLE:
-                highlighted = _highlight_by_language(code_content, self.code_language)
-                print(highlighted)
+                print(_highlight_by_language(code_content, self.code_language))
             else:
                 print(code_content)
             print(f"{C.DIM}```{C.RST}", flush=True)
         
+        print()  # Final newline
         self.buffer = ""
         self.code_buffer = ""
         self.in_code_block = False
-        self.lines_printed = 0
+        self.in_tool_call = False
 
 def _print_highlighted_lines(content: str, filename: str, prefix: str = "", line_nums: bool = True, color_override: str = None) -> None:
     """Print content with syntax highlighting and optional line numbers."""
