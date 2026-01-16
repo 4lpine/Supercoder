@@ -1,4 +1,6 @@
-
+"""
+Tools module for Supercoder - All tool implementations
+"""
 import os
 import re
 import json
@@ -9,39 +11,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
-
-# --- Docker Mode ---
-# Docker mode is enabled when:
-# 1. Running inside Docker container (HOST_CMD_DIR env var set), OR
-# 2. User explicitly enabled it with 'docker on' command
-_docker_mode_override: Optional[bool] = None
-
-def is_docker_mode() -> bool:
-    """Check if running in Docker mode (either inside container or user-enabled)."""
-    global _docker_mode_override
-    # If user explicitly set it, use that
-    if _docker_mode_override is not None:
-        return _docker_mode_override
-    # Otherwise, detect if we're inside Docker container
-    return os.environ.get("HOST_CMD_DIR") is not None
-
-def is_inside_docker() -> bool:
-    """Check if actually running inside Docker container."""
-    return os.environ.get("HOST_CMD_DIR") is not None
-
-def set_docker_mode(enabled: bool) -> None:
-    """Set Docker mode override."""
-    global _docker_mode_override
-    _docker_mode_override = enabled
-
-def get_docker_mode_status() -> str:
-    """Get human-readable Docker mode status."""
-    if is_inside_docker():
-        return "Docker (container)"
-    elif _docker_mode_override:
-        return "Docker (enabled)"
-    else:
-        return "Native"
 
 # --- Undo System ---
 @dataclass
@@ -106,85 +75,6 @@ class UndoManager:
             return {"restored": restored}
 
 undo_manager = UndoManager()
-
-# --- Host Command Execution (runs on Windows host, not in Docker) ---
-def run_on_host(command: str, timeout: int = 60) -> Dict[str, Any]:
-    """
-    Execute a command on the Windows host machine (not inside Docker).
-    Useful for running GUI applications, opening files, etc.
-    """
-    import time as _time
-    
-    host_cmd_dir = os.environ.get("HOST_CMD_DIR")
-    if not host_cmd_dir:
-        return {'stdout': '', 'stderr': 'Host command execution not available (HOST_CMD_DIR not set)', 'returncode': -1}
-    
-    cmd_file = os.path.join(host_cmd_dir, "cmd.txt")
-    result_file = os.path.join(host_cmd_dir, "result.txt")
-    done_file = os.path.join(host_cmd_dir, "done.txt")
-    lock_file = os.path.join(host_cmd_dir, "lock.txt")
-    
-    # Get the Windows path for current directory
-    host_pwd = os.environ.get("HOST_PWD", "C:\\")
-    
-    try:
-        # Wait for any previous command to finish (lock released)
-        wait_start = _time.time()
-        while os.path.exists(lock_file) and _time.time() - wait_start < 5:
-            _time.sleep(0.1)
-        
-        # Clean up any previous files
-        for f in [result_file, done_file, cmd_file]:
-            if os.path.exists(f):
-                try:
-                    os.remove(f)
-                except:
-                    pass
-        
-        # Small delay to ensure cleanup is complete
-        _time.sleep(0.15)
-        
-        # Write command file atomically - write to temp then rename
-        temp_cmd = os.path.join(host_cmd_dir, "cmd.tmp")
-        with open(temp_cmd, 'w') as f:
-            f.write(f"{command}\n{host_pwd}\n")
-        
-        # Rename to cmd.txt (atomic on most filesystems)
-        if os.path.exists(cmd_file):
-            os.remove(cmd_file)
-        os.rename(temp_cmd, cmd_file)
-        
-        # Wait for result
-        start = _time.time()
-        while _time.time() - start < timeout:
-            if os.path.exists(done_file):
-                # Small delay to ensure file is fully written
-                _time.sleep(0.1)
-                # Read result
-                if os.path.exists(result_file):
-                    try:
-                        with open(result_file, 'r', encoding='utf-8', errors='replace') as f:
-                            output = f.read()
-                    except:
-                        output = ""
-                else:
-                    output = ""
-                
-                # Clean up
-                for f in [result_file, done_file]:
-                    if os.path.exists(f):
-                        try:
-                            os.remove(f)
-                        except:
-                            pass
-                
-                return {'stdout': output, 'stderr': '', 'returncode': 0}
-            _time.sleep(0.1)
-        
-        return {'stdout': '', 'stderr': f'Timed out after {timeout}s', 'returncode': -1}
-    
-    except Exception as e:
-        return {'stdout': '', 'stderr': str(e), 'returncode': -1}
 
 # --- Shell Execution ---
 def execute_pwsh(command: str, timeout: int = 60) -> Dict[str, Any]:

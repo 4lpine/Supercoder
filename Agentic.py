@@ -1,19 +1,13 @@
+"""
+Agentic - Simple LLM Agent with Native Tool Calling
+"""
 import json
 import time
 import os
 import sys
-import re
 import requests
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple, Iterator, Set
-import uuid
-
-# --- G4F Import ---
-try:
-    import g4f
-    G4F_AVAILABLE = True
-except ImportError:
-    G4F_AVAILABLE = False
 
 # --- PyInstaller Path Helper ---
 def _get_agentic_base_path() -> Path:
@@ -45,14 +39,11 @@ class TokenManager:
                             return
                     except Exception as e:
                         print(f"[Warning: Could not read tokens from {p}: {e}]")
-            # For g4f models, tokens are optional
-            cls._tokens = []
+            raise FileNotFoundError("No API tokens found. Use 'tokens' command to add your OpenRouter API key.")
 
     @classmethod
     def get_token(cls):
         cls.load_tokens()
-        if not cls._tokens:
-            return None
         return cls._tokens[cls._current_index]
 
     @classmethod
@@ -64,16 +55,14 @@ class TokenManager:
 
 # --- Token Counter ---
 class TokenCounter:
-    """Simple token counter - estimates ~4 chars per token."""
+    """Simple token counter - estimates ~4 chars per token"""
 
     def __init__(self):
         self._encoder = None
-        if getattr(sys, 'frozen', False):
-            return
         try:
             import tiktoken
             self._encoder = tiktoken.get_encoding("cl100k_base")
-        except:
+        except ImportError:
             pass
 
     def count(self, text: str) -> int:
@@ -101,78 +90,8 @@ class TokenCounter:
         return total + 3
 
 
-# --- G4F Free Models (no API key required) ---
-G4F_FREE_MODELS = {
-    # Top Coding Models
-    "kimi-k2": {"context": 128000, "description": "Kimi K2 - Best free coding"},
-    "deepseek-v3": {"context": 128000, "description": "DeepSeek V3 - Excellent coder"},
-    "deepseek-r1": {"context": 128000, "description": "DeepSeek R1 - Reasoning"},
-    "deepseek-r1-turbo": {"context": 128000, "description": "DeepSeek R1 Turbo"},
-    "deepseek-r1-distill-qwen-32b": {"context": 128000, "description": "DeepSeek R1 Distill"},
-    "deepseek-prover-v2": {"context": 128000, "description": "DeepSeek Prover V2"},
-    "deepseek-prover-v2-671b": {"context": 128000, "description": "DeepSeek Prover 671B"},
-    "deepseek-v3-0324": {"context": 128000, "description": "DeepSeek V3 0324"},
-    "deepseek-v3-0324-turbo": {"context": 128000, "description": "DeepSeek V3 Turbo"},
-    "deepseek-r1-0528": {"context": 128000, "description": "DeepSeek R1 0528"},
-    "deepseek-r1-0528-turbo": {"context": 128000, "description": "DeepSeek R1 0528 Turbo"},
-    
-    # Gemini Models
-    "gemini-2.0": {"context": 128000, "description": "Gemini 2.0"},
-    "gemini-2.0-flash": {"context": 128000, "description": "Gemini 2.0 Flash"},
-    "gemini-2.0-flash-thinking": {"context": 128000, "description": "Gemini 2.0 Thinking"},
-    "gemini-2.0-flash-thinking-with-apps": {"context": 128000, "description": "Gemini 2.0 w/ Apps"},
-    "gemini-2.5-flash": {"context": 128000, "description": "Gemini 2.5 Flash"},
-    "gemini-2.5-pro": {"context": 128000, "description": "Gemini 2.5 Pro"},
-    
-    # Qwen Models
-    "qwen-3-235b": {"context": 128000, "description": "Qwen 3 235B"},
-    "qwen-3-32b": {"context": 128000, "description": "Qwen 3 32B"},
-    "qwen-3-30b": {"context": 128000, "description": "Qwen 3 30B"},
-    "qwen-3-14b": {"context": 128000, "description": "Qwen 3 14B"},
-    "qwen-3-4b": {"context": 128000, "description": "Qwen 3 4B"},
-    "qwen-3-1.7b": {"context": 128000, "description": "Qwen 3 1.7B"},
-    "qwen-3-0.6b": {"context": 128000, "description": "Qwen 3 0.6B"},
-    "qwq-32b": {"context": 128000, "description": "QwQ 32B Reasoning"},
-    
-    # Llama Models
-    "llama-3.2-90b": {"context": 128000, "description": "Llama 3.2 90B"},
-    "llama-3.3-70b": {"context": 128000, "description": "Llama 3.3 70B"},
-    "llama-4-scout": {"context": 128000, "description": "Llama 4 Scout"},
-    "llama-4-maverick": {"context": 128000, "description": "Llama 4 Maverick"},
-    
-    # Gemma Models
-    "codegemma-7b": {"context": 128000, "description": "CodeGemma 7B"},
-    "gemma-1.1-7b": {"context": 128000, "description": "Gemma 1.1 7B"},
-    "gemma-2-9b": {"context": 128000, "description": "Gemma 2 9B"},
-    "gemma-3-4b": {"context": 128000, "description": "Gemma 3 4B"},
-    "gemma-3-12b": {"context": 128000, "description": "Gemma 3 12B"},
-    "gemma-3-27b": {"context": 128000, "description": "Gemma 3 27B"},
-    
-    # GPT Models
-    "gpt-4": {"context": 128000, "description": "GPT-4 via g4f"},
-    "gpt-4.1-nano": {"context": 128000, "description": "GPT-4.1 Nano"},
-    "gpt-oss-120b": {"context": 128000, "description": "GPT OSS 120B"},
-    "gpt-image": {"context": 128000, "description": "GPT Image"},
-    
-    # Phi Models
-    "phi-4": {"context": 128000, "description": "Microsoft Phi-4"},
-    "phi-4-multimodal": {"context": 128000, "description": "Phi-4 Multimodal"},
-    "phi-4-reasoning-plus": {"context": 128000, "description": "Phi-4 Reasoning"},
-    "wizardlm-2-7b": {"context": 128000, "description": "WizardLM 2 7B"},
-    
-    # Other Models
-    "grok-3": {"context": 128000, "description": "Grok 3"},
-    "command-r": {"context": 128000, "description": "Cohere Command R"},
-    "command-a": {"context": 128000, "description": "Cohere Command A"},
-    "r1-1776": {"context": 128000, "description": "R1-1776"},
-    "airoboros-70b": {"context": 128000, "description": "Airoboros 70B"},
-    "lzlv-70b": {"context": 128000, "description": "LZLV 70B"},
-    "aria": {"context": 128000, "description": "Aria"},
-}
-
 # --- Native Tool Definitions ---
-# Base tools (always available)
-_BASE_TOOLS = [
+NATIVE_TOOLS = [
     {"type": "function", "function": {"name": "executePwsh", "description": "Execute a shell command", "parameters": {"type": "object", "properties": {"command": {"type": "string", "description": "Command to execute"}, "timeout": {"type": "integer", "description": "Timeout in seconds (default 60)"}}, "required": ["command"]}}},
     {"type": "function", "function": {"name": "controlPwshProcess", "description": "Start or stop background processes", "parameters": {"type": "object", "properties": {"action": {"type": "string", "enum": ["start", "stop"], "description": "Action to perform"}, "command": {"type": "string", "description": "Command to run (for start)"}, "processId": {"type": "integer", "description": "Process ID (for stop)"}, "path": {"type": "string", "description": "Working directory (for start)"}}, "required": ["action"]}}},
     {"type": "function", "function": {"name": "listProcesses", "description": "List running background processes", "parameters": {"type": "object", "properties": {}, "required": []}}},
@@ -180,7 +99,7 @@ _BASE_TOOLS = [
     {"type": "function", "function": {"name": "listDirectory", "description": "List files and directories", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "Directory path (default: .)"}}, "required": []}}},
     {"type": "function", "function": {"name": "readFile", "description": "Read a file's contents", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "Path to the file"}}, "required": ["path"]}}},
     {"type": "function", "function": {"name": "readMultipleFiles", "description": "Read multiple files at once", "parameters": {"type": "object", "properties": {"paths": {"type": "array", "items": {"type": "string"}, "description": "List of file paths"}}, "required": ["paths"]}}},
-    {"type": "function", "function": {"name": "readCode", "description": "Intelligently read code files with AST-based structure analysis.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "Path to the code file"}, "symbol": {"type": "string", "description": "Optional symbol name to search for"}}, "required": ["path"]}}},
+    {"type": "function", "function": {"name": "readCode", "description": "Intelligently read code files with AST-based structure analysis. Returns file content plus extracted functions, classes, imports, and global variables. Supports optional symbol search.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "Path to the code file"}, "symbol": {"type": "string", "description": "Optional symbol name to search for"}, "includeStructure": {"type": "boolean", "description": "Whether to include AST structure analysis (default true)"}}, "required": ["path"]}}},
     {"type": "function", "function": {"name": "fileSearch", "description": "Search for files by name pattern", "parameters": {"type": "object", "properties": {"pattern": {"type": "string", "description": "Filename pattern to search"}, "path": {"type": "string", "description": "Directory to search (default: .)"}}, "required": ["pattern"]}}},
     {"type": "function", "function": {"name": "grepSearch", "description": "Search for regex pattern in files", "parameters": {"type": "object", "properties": {"pattern": {"type": "string", "description": "Regex pattern to search"}, "path": {"type": "string", "description": "Directory to search (default: .)"}}, "required": ["pattern"]}}},
     {"type": "function", "function": {"name": "deleteFile", "description": "Delete a file", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "Path to delete"}}, "required": ["path"]}}},
@@ -188,6 +107,7 @@ _BASE_TOOLS = [
     {"type": "function", "function": {"name": "fsAppend", "description": "Append content to a file", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "Path to append to"}, "content": {"type": "string", "description": "Content to append"}}, "required": ["path", "content"]}}},
     {"type": "function", "function": {"name": "strReplace", "description": "Replace text in a file", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "Path to the file"}, "old": {"type": "string", "description": "Text to find"}, "new": {"type": "string", "description": "Replacement text"}}, "required": ["path", "old", "new"]}}},
     {"type": "function", "function": {"name": "getDiagnostics", "description": "Check for syntax/lint errors in code", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "Path to check"}}, "required": ["path"]}}},
+    {"type": "function", "function": {"name": "propertyCoverage", "description": "Analyze how well code covers spec requirements", "parameters": {"type": "object", "properties": {"specPath": {"type": "string", "description": "Path to spec/requirements file"}, "codePath": {"type": "string", "description": "Path to code file"}}, "required": ["specPath", "codePath"]}}},
     {"type": "function", "function": {"name": "insertLines", "description": "Insert text at line number", "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "lineNumber": {"type": "integer"}, "content": {"type": "string"}}, "required": ["path", "lineNumber", "content"]}}},
     {"type": "function", "function": {"name": "removeLines", "description": "Remove lines from file", "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "startLine": {"type": "integer"}, "endLine": {"type": "integer"}}, "required": ["path", "startLine", "endLine"]}}},
     {"type": "function", "function": {"name": "moveFile", "description": "Move/rename a file", "parameters": {"type": "object", "properties": {"source": {"type": "string"}, "destination": {"type": "string"}}, "required": ["source", "destination"]}}},
@@ -202,31 +122,17 @@ _BASE_TOOLS = [
     {"type": "function", "function": {"name": "systemInfo", "description": "Get system info", "parameters": {"type": "object", "properties": {}, "required": []}}},
     {"type": "function", "function": {"name": "runTests", "description": "Run tests", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": []}}},
     {"type": "function", "function": {"name": "formatCode", "description": "Format code file", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}},
-    {"type": "function", "function": {"name": "webSearch", "description": "Search the web for programming help", "parameters": {"type": "object", "properties": {"query": {"type": "string", "description": "Search query"}, "site": {"type": "string", "description": "Optional site filter"}, "maxResults": {"type": "integer", "description": "Max results (default 5)"}}, "required": ["query"]}}},
-    {"type": "function", "function": {"name": "interactWithUser", "description": "Interact with the user when task is complete, blocked, or needs clarification", "parameters": {"type": "object", "properties": {"message": {"type": "string", "description": "Message to show"}, "interactionType": {"type": "string", "enum": ["complete", "question", "error"], "description": "Type of interaction"}}, "required": ["message", "interactionType"]}}},
-    {"type": "function", "function": {"name": "finish", "description": "Signal task completion", "parameters": {"type": "object", "properties": {"summary": {"type": "string", "description": "Summary of what was accomplished"}, "status": {"type": "string", "enum": ["complete", "blocked", "partial"], "description": "Task status"}}, "required": ["summary"]}}}
+    {"type": "function", "function": {"name": "webSearch", "description": "Search the web for programming help, documentation, or solutions. Use when you need to look up how to do something, find examples, or troubleshoot errors.", "parameters": {"type": "object", "properties": {"query": {"type": "string", "description": "Search query (e.g., 'python async await example')"}, "site": {"type": "string", "description": "Optional site to restrict search (e.g., 'stackoverflow.com', 'github.com')"}, "maxResults": {"type": "integer", "description": "Maximum results to return (default 5)"}}, "required": ["query"]}}},
+    {"type": "function", "function": {"name": "searchStackOverflow", "description": "Search Stack Overflow specifically for programming questions and solutions.", "parameters": {"type": "object", "properties": {"query": {"type": "string", "description": "Search query"}, "maxResults": {"type": "integer", "description": "Maximum results to return (default 5)"}}, "required": ["query"]}}},
+    {"type": "function", "function": {"name": "interactWithUser", "description": "Interact with the user. Use ONLY when: (1) task is FULLY complete, (2) you hit a blocker that requires user decision, (3) you need clarification. Do NOT use mid-task.", "parameters": {"type": "object", "properties": {"message": {"type": "string", "description": "Message to show the user"}, "interactionType": {"type": "string", "enum": ["complete", "question", "error"], "description": "complete=task done, question=need user input, error=hit a blocker"}}, "required": ["message", "interactionType"]}}},
+    {"type": "function", "function": {"name": "finish", "description": "Signal that you have COMPLETED your current task and want the user to review your work. Call this when you are done.", "parameters": {"type": "object", "properties": {"summary": {"type": "string", "description": "A summary of what you accomplished"}, "status": {"type": "string", "enum": ["complete", "blocked", "partial"], "description": "complete=task done, blocked=needs user help, partial=some progress made"}}, "required": ["summary"]}}}
 ]
-
-# Docker-only tool (for running GUI apps on Windows host)
-_DOCKER_ONLY_TOOL = {"type": "function", "function": {"name": "runOnHost", "description": "Execute a command on the Windows host machine (not in Docker). Use this for GUI apps, opening files with default programs, or Windows-specific commands.", "parameters": {"type": "object", "properties": {"command": {"type": "string", "description": "Windows command to execute on host"}, "timeout": {"type": "integer", "description": "Timeout in seconds (default 60)"}}, "required": ["command"]}}}
-
-def get_native_tools() -> List[dict]:
-    """Get the list of native tools, including Docker-only tools if in Docker mode."""
-    from tools import is_inside_docker
-    tools = list(_BASE_TOOLS)
-    if is_inside_docker():
-        # Insert runOnHost after executePwsh
-        tools.insert(1, _DOCKER_ONLY_TOOL)
-    return tools
-
-# For backward compatibility
-NATIVE_TOOLS = _BASE_TOOLS  # Will be dynamically updated
 
 # Model context limits
 MODEL_LIMITS = {
     "anthropic/claude-opus-4.5": 200000,
     "anthropic/claude-sonnet-4": 200000,
-    "qwen/qwen3-coder": 262144,
+    "qwen/qwen3-coder": 128000,
     "deepseek/deepseek-v3.2": 160000,
     "qwen/qwen3-235b-a22b": 128000,
     "anthropic/claude-3-opus": 200000,
@@ -234,111 +140,6 @@ MODEL_LIMITS = {
     "openai/gpt-4-turbo": 128000,
     "default": 128000
 }
-
-# Models that work better with text-based tool calling instead of native
-TEXT_TOOL_MODELS = {
-    # Empty - all OpenRouter models use native tool calling
-    # Only g4f models use text-based tool calling
-}
-
-
-# --- Tool Call Parser for G4F (text-based) ---
-def _build_tools_prompt(tools: List[dict]) -> str:
-    """Build a prompt describing available tools for text-based tool calling."""
-    lines = [
-        "# CRITICAL: TOOL CALLING FORMAT",
-        "",
-        "You MUST call tools using this EXACT format - no exceptions:",
-        "",
-        "```tool_call",
-        '{"tool": "toolName", "args": {"param": "value"}}',
-        "```",
-        "",
-        "RULES:",
-        "1. EVERY response must contain at least one ```tool_call``` block",
-        "2. Do NOT write text like 'Let me...' or 'I will...' - just call the tool",
-        "3. If you need to do something, call the tool IMMEDIATELY",
-        "4. Call 'finish' when the task is complete",
-        "",
-        "WRONG: 'Let me check the directory' (no tool call)",
-        "RIGHT: ```tool_call",
-        '{"tool": "listDirectory", "args": {"path": "."}}',
-        "```",
-        "",
-        "Available tools:",
-        ""
-    ]
-    for tool in tools:
-        func = tool.get("function", {})
-        name = func.get("name", "")
-        desc = func.get("description", "")
-        params = func.get("parameters", {}).get("properties", {})
-        required = func.get("parameters", {}).get("required", [])
-        
-        param_strs = []
-        for pname, pinfo in params.items():
-            req = "*" if pname in required else ""
-            ptype = pinfo.get("type", "string")
-            param_strs.append(f"    {pname}{req}: {ptype}")
-        
-        lines.append(f"- {name}: {desc}")
-        if param_strs:
-            lines.extend(param_strs)
-    
-    return "\n".join(lines)
-
-
-def _parse_tool_calls_from_text(text: str) -> List[dict]:
-    """Parse tool calls from model text response."""
-    tool_calls = []
-    
-    # Pattern to match ```tool_call ... ``` blocks
-    pattern = r'```tool_call\s*(.*?)\s*```'
-    matches = re.findall(pattern, text, re.DOTALL | re.IGNORECASE)
-    
-    for match in matches:
-        try:
-            # Clean up the JSON
-            json_str = match.strip()
-            # Handle potential issues with the JSON
-            data = json.loads(json_str)
-            
-            tool_name = data.get("tool") or data.get("name") or data.get("function")
-            args = data.get("args") or data.get("arguments") or data.get("parameters") or {}
-            
-            if tool_name:
-                tool_calls.append({
-                    "id": f"call_{uuid.uuid4().hex[:8]}",
-                    "name": tool_name,
-                    "args": args
-                })
-        except json.JSONDecodeError:
-            # Try to extract tool name and args with regex as fallback
-            try:
-                tool_match = re.search(r'"tool"\s*:\s*"([^"]+)"', match)
-                if tool_match:
-                    tool_name = tool_match.group(1)
-                    # Try to parse args
-                    args_match = re.search(r'"args"\s*:\s*(\{[^}]+\})', match)
-                    args = json.loads(args_match.group(1)) if args_match else {}
-                    tool_calls.append({
-                        "id": f"call_{uuid.uuid4().hex[:8]}",
-                        "name": tool_name,
-                        "args": args
-                    })
-            except:
-                pass
-    
-    return tool_calls
-
-
-def _strip_tool_calls_from_text(text: str) -> str:
-    """Remove tool call blocks from text to get just the content."""
-    # Remove ```tool_call ... ``` blocks
-    cleaned = re.sub(r'```tool_call\s*.*?\s*```', '', text, flags=re.DOTALL | re.IGNORECASE)
-    # Clean up extra whitespace
-    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
-    return cleaned.strip()
 
 
 # --- Lightweight File Indexer ---
@@ -425,9 +226,8 @@ class FileIndexer:
         return [p for _, _, p in scored[:limit]]
 
 
-# --- Agent Class ---
 class Agent:
-    def __init__(self, initial_prompt: str, model: str = "kimi-k2", streaming: bool = False, embedding_model: str = None):
+    def __init__(self, initial_prompt: str, model: str = "qwen/qwen3-coder:free", streaming: bool = False, embedding_model: str = None):
         self.model = model
         self.streaming = streaming
         self.messages = []
@@ -436,21 +236,8 @@ class Agent:
         self._context_cache = {}
         self.indexer = FileIndexer()
         self.token_counter = TokenCounter()
+        self.max_context = MODEL_LIMITS.get(model, MODEL_LIMITS["default"])
         self.reserved_output = 4096
-        
-        # Track tokens for cost calculation
-        self.last_prompt_tokens = 0
-        self.last_completion_tokens = 0
-        
-        # Determine if using g4f or OpenRouter
-        self.use_g4f = model in G4F_FREE_MODELS
-        
-        # Set context limit
-        if self.use_g4f:
-            self.max_context = G4F_FREE_MODELS.get(model, {}).get("context", 128000)
-        else:
-            self.max_context = MODEL_LIMITS.get(model, MODEL_LIMITS["default"])
-        
         self.messages.append({"role": "system", "content": initial_prompt})
 
     def add_context(self, files):
@@ -506,6 +293,7 @@ class Agent:
         if not query_keywords:
             return 0
         return sum(1 for kw in query_keywords if kw in file_text.lower())
+
 
     def _build_context_string(self, hint_text: str = "") -> str:
         all_files = self.mandatory_files + [f for f in self.context_files if f not in self.mandatory_files]
@@ -565,12 +353,15 @@ class Agent:
             except Exception as e:
                 print(f"[Warning: Could not read optional file {f}: {e}]")
 
+        if used_tokens > available:
+            print(f"[WARNING: Mandatory files exceed available context! {used_tokens} tokens used, {available} available]")
         if skipped_files:
-            print(f"[Context: {included} files, {len(skipped_files)} skipped, ~{used_tokens} tokens]")
-            parts.append("## Skipped files (available via tools):\n")
+            print(f"[Context: {included} files, {len(skipped_files)} optional files skipped, ~{used_tokens} tokens]")
+            parts.append("## Skipped files (not included, available via tools):\n")
             for f in skipped_files:
                 parts.append(f"- {f}\n")
         return "\n".join(parts)
+
 
     def Prompt(self, user_input: str, streaming: bool = None) -> str:
         if streaming is None:
@@ -578,37 +369,23 @@ class Agent:
         context = self._build_context_string(user_input)
         full_input = f"{context}\n\n{user_input}" if context else user_input
         self.messages.append({"role": "user", "content": full_input})
-        
-        if self.use_g4f:
-            response = self._call_g4f(streaming=streaming)
-        else:
-            response = self._call_openrouter(streaming=streaming)
-        
+        response = self._call_api(streaming=streaming)
         self.messages.append({"role": "assistant", "content": response})
         self.context_files = []
         return response
 
     def PromptWithTools(self, user_input: str, tools: List[dict] = None, streaming: bool = False, on_chunk=None) -> Tuple[str, List[dict]]:
         if tools is None:
-            tools = get_native_tools()
-        
+            tools = NATIVE_TOOLS
         context = self._build_context_string(user_input)
         current_messages = list(self.messages)
         full_input = f"{context}\n\n{user_input}" if context else user_input
         current_messages.append({"role": "user", "content": full_input})
         self.messages.append({"role": "user", "content": user_input})
-        
         original_messages = self.messages
         self.messages = current_messages
-        
         try:
-            if self.use_g4f:
-                content, tool_calls = self._call_g4f_with_tools(tools, streaming=streaming, on_chunk=on_chunk)
-            elif self.model in TEXT_TOOL_MODELS:
-                # Use text-based tool calling for models that don't handle native tools well
-                content, tool_calls = self._call_openrouter_text_tools(tools, streaming=streaming, on_chunk=on_chunk)
-            else:
-                content, tool_calls = self._call_openrouter_with_tools(tools, streaming=streaming, on_chunk=on_chunk)
+            content, tool_calls = self._call_api_with_tools(tools, streaming=streaming, on_chunk=on_chunk)
         finally:
             self.messages = original_messages
 
@@ -632,135 +409,14 @@ class Agent:
         return {"used": used, "max": self.max_context, "available": self.max_context - used - self.reserved_output, "percent": round(used / self.max_context * 100, 1)}
 
     def AddToolResult(self, tool_call_id: str, tool_name: str, result: str):
-        if self.use_g4f or self.model in TEXT_TOOL_MODELS:
-            # For g4f and text-tool models, add tool results as user messages with clear formatting
-            self.messages.append({"role": "user", "content": f"Tool '{tool_name}' returned:\n```\n{result}\n```\n\nContinue with the task. Use more tools if needed, or call 'finish' when done."})
-        else:
-            self.messages.append({"role": "tool", "tool_call_id": tool_call_id, "content": str(result)})
+        self.messages.append({"role": "tool", "tool_call_id": tool_call_id, "content": str(result)})
 
 
-    # --- G4F API Methods ---
-    def _call_g4f(self, streaming: bool = False) -> str:
-        """Call g4f API without tools."""
-        if not G4F_AVAILABLE:
-            return "[Error: g4f not installed. Run: pip install g4f]"
-        
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                # Convert messages to g4f format
-                g4f_messages = []
-                for msg in self.messages:
-                    role = msg.get("role", "user")
-                    content = msg.get("content", "")
-                    if role == "tool":
-                        continue
-                    if role in ("system", "user", "assistant"):
-                        g4f_messages.append({"role": role, "content": str(content) if content else ""})
-                
-                response = g4f.ChatCompletion.create(
-                    model=self.model,
-                    messages=g4f_messages,
-                    stream=streaming
-                )
-                
-                if streaming:
-                    result = ""
-                    for chunk in response:
-                        if chunk and isinstance(chunk, str):
-                            print(chunk, end='', flush=True)
-                            result += chunk
-                    print()
-                    return result
-                else:
-                    # Handle various response types
-                    if isinstance(response, str):
-                        return response
-                    elif hasattr(response, '__iter__') and not isinstance(response, (str, dict)):
-                        # It's a generator/iterator, consume it
-                        return "".join(str(c) for c in response if isinstance(c, str))
-                    else:
-                        return str(response)
-                    
-            except Exception as e:
-                print(f"[G4F Error, attempt {attempt + 1}] {e}")
-                time.sleep(2 ** attempt)
-        
-        return "[Error: G4F API failed]"
-
-    def _call_g4f_with_tools(self, tools: List[dict], streaming: bool = False, on_chunk=None) -> Tuple[str, List[dict]]:
-        """Call g4f API with text-based tool calling."""
-        if not G4F_AVAILABLE:
-            return "[Error: g4f not installed]", []
-        
-        # Build tools prompt and inject into system message
-        tools_prompt = _build_tools_prompt(tools)
-        
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                # Convert messages to g4f format with tools prompt
-                g4f_messages = []
-                for i, msg in enumerate(self.messages):
-                    role = msg.get("role", "user")
-                    content = msg.get("content", "")
-                    
-                    if role == "system":
-                        content = f"{content}\n\n{tools_prompt}"
-                    elif role == "tool":
-                        continue
-                    
-                    if role in ("system", "user", "assistant"):
-                        g4f_messages.append({"role": role, "content": str(content) if content else ""})
-                
-                response = g4f.ChatCompletion.create(
-                    model=self.model,
-                    messages=g4f_messages,
-                    stream=streaming
-                )
-                
-                if streaming:
-                    result = ""
-                    for chunk in response:
-                        # Only process string chunks
-                        if chunk and isinstance(chunk, str):
-                            if on_chunk:
-                                on_chunk(chunk)
-                            result += chunk
-                    content = result
-                else:
-                    # Handle various response types
-                    if isinstance(response, str):
-                        content = response
-                    elif hasattr(response, '__iter__') and not isinstance(response, (str, dict)):
-                        content = "".join(str(c) for c in response if isinstance(c, str))
-                    else:
-                        content = str(response)
-                
-                # Parse tool calls from response
-                tool_calls = _parse_tool_calls_from_text(content)
-                
-                # Strip tool call blocks from content for display
-                display_content = _strip_tool_calls_from_text(content)
-                
-                return display_content, tool_calls
-                    
-            except Exception as e:
-                print(f"[G4F Error, attempt {attempt + 1}] {e}")
-                time.sleep(2 ** attempt)
-        
-        return "[Error: G4F API failed]", []
-
-    # --- OpenRouter API Methods ---
-    def _call_openrouter(self, streaming: bool = False) -> str:
-        """Call OpenRouter API without tools."""
+    def _call_api(self, streaming: bool = False) -> str:
         max_retries = 5
         for attempt in range(max_retries):
             try:
                 token = TokenManager.get_token()
-                if not token:
-                    return "[Error: No API token. Use 'tokens' command to add one.]"
-                
                 resp = requests.post(
                     "https://openrouter.ai/api/v1/chat/completions",
                     headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
@@ -768,7 +424,6 @@ class Agent:
                     timeout=120, stream=streaming
                 )
                 resp.raise_for_status()
-                
                 if streaming:
                     result = ""
                     for line in resp.iter_lines():
@@ -792,109 +447,34 @@ class Agent:
                 else:
                     data = resp.json()
                     return data["choices"][0]["message"]["content"]
-                    
             except requests.exceptions.HTTPError as e:
                 status = e.response.status_code if e.response else 0
+                body = ""
+                try:
+                    body = e.response.text[:500] if e.response else ""
+                except:
+                    pass
+                print(f"[HTTP Error {status}, attempt {attempt + 1}] {body}")
                 if status in (401, 403, 429):
                     TokenManager.rotate_token()
+                time.sleep(2 ** attempt)
+            except requests.exceptions.ConnectionError as e:
+                print(f"[Connection Error, attempt {attempt + 1}] {e}")
+                time.sleep(2 ** attempt)
+            except requests.exceptions.Timeout as e:
+                print(f"[Timeout Error, attempt {attempt + 1}] {e}")
                 time.sleep(2 ** attempt)
             except Exception as e:
                 print(f"[Error: {type(e).__name__}: {e}, attempt {attempt + 1}]")
                 time.sleep(2 ** attempt)
-        
         return "[Error: All API attempts failed]"
 
-    def _call_openrouter_text_tools(self, tools: List[dict], streaming: bool = False, on_chunk=None) -> Tuple[str, List[dict]]:
-        """Call OpenRouter API with text-based tool calling (for models that don't handle native tools well)."""
-        # Build tools prompt and inject into system message
-        tools_prompt = _build_tools_prompt(tools)
-        
-        max_retries = 5
-        for attempt in range(max_retries):
-            try:
-                token = TokenManager.get_token()
-                if not token:
-                    return "[Error: No API token]", []
-                
-                # Convert messages with tools prompt injected into system
-                api_messages = []
-                for i, msg in enumerate(self.messages):
-                    role = msg.get("role", "user")
-                    content = msg.get("content", "")
-                    
-                    if role == "system":
-                        content = f"{content}\n\n{tools_prompt}"
-                    elif role == "tool":
-                        # Skip tool messages - they're handled as user messages for text-based
-                        continue
-                    
-                    if role in ("system", "user", "assistant"):
-                        api_messages.append({"role": role, "content": str(content) if content else ""})
-                
-                resp = requests.post(
-                    "https://openrouter.ai/api/v1/chat/completions",
-                    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-                    json={"model": self.model, "messages": api_messages, "stream": streaming},
-                    timeout=120, stream=streaming
-                )
-                resp.raise_for_status()
-                
-                if streaming:
-                    content = ""
-                    for line in resp.iter_lines():
-                        if not line:
-                            continue
-                        line = line.decode('utf-8')
-                        if line.startswith('data: '):
-                            line = line[6:]
-                        if line == '[DONE]':
-                            break
-                        try:
-                            data = json.loads(line)
-                            delta = data['choices'][0].get('delta', {})
-                            if 'content' in delta and delta['content']:
-                                chunk = delta['content']
-                                content += chunk
-                                if on_chunk:
-                                    on_chunk(chunk)
-                        except:
-                            pass
-                else:
-                    data = resp.json()
-                    content = data["choices"][0]["message"].get("content", "")
-                
-                # Estimate tokens for cost tracking
-                self.last_prompt_tokens = self.token_counter.count_messages(api_messages)
-                self.last_completion_tokens = self.token_counter.count(content)
-                
-                # Parse tool calls from response text
-                tool_calls = _parse_tool_calls_from_text(content)
-                
-                # Strip tool call blocks from content for display
-                display_content = _strip_tool_calls_from_text(content)
-                
-                return display_content, tool_calls
-                    
-            except requests.exceptions.HTTPError as e:
-                status = e.response.status_code if e.response else 0
-                if status in (401, 403, 429):
-                    TokenManager.rotate_token()
-                time.sleep(2 ** attempt)
-            except Exception as e:
-                print(f"[Error: {type(e).__name__}: {e}, attempt {attempt + 1}]")
-                time.sleep(2 ** attempt)
-        
-        return "[Error: All API attempts failed]", []
 
-    def _call_openrouter_with_tools(self, tools: List[dict], streaming: bool = False, on_chunk=None) -> Tuple[str, List[dict]]:
-        """Call OpenRouter API with native tool calling."""
+    def _call_api_with_tools(self, tools: List[dict], streaming: bool = False, on_chunk=None) -> Tuple[str, List[dict]]:
         max_retries = 5
         for attempt in range(max_retries):
             try:
                 token = TokenManager.get_token()
-                if not token:
-                    return "[Error: No API token]", []
-                
                 resp = requests.post(
                     "https://openrouter.ai/api/v1/chat/completions",
                     headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
@@ -902,7 +482,6 @@ class Agent:
                     timeout=120, stream=streaming
                 )
                 resp.raise_for_status()
-                
                 if streaming:
                     content = ""
                     tool_calls_data = {}
@@ -934,16 +513,8 @@ class Agent:
                                             tool_calls_data[idx]['name'] = tc['function']['name']
                                         if 'arguments' in tc['function']:
                                             tool_calls_data[idx]['arguments'] += tc['function']['arguments']
-                                            # Signal tool call progress to spinner
-                                            if on_chunk:
-                                                on_chunk(f"\x00TOOL:{len(tc['function']['arguments'])}")
                         except:
                             pass
-                    
-                    # Estimate tokens for cost tracking
-                    self.last_prompt_tokens = self.token_counter.count_messages(self.messages)
-                    self.last_completion_tokens = self.token_counter.count(content)
-                    
                     parsed_calls = []
                     for idx in sorted(tool_calls_data.keys()):
                         tc = tool_calls_data[idx]
@@ -959,12 +530,6 @@ class Agent:
                     message = data["choices"][0]["message"]
                     content = message.get("content") or ""
                     raw_tool_calls = message.get("tool_calls", [])
-                    
-                    # Get actual usage if available, otherwise estimate
-                    usage = data.get("usage", {})
-                    self.last_prompt_tokens = usage.get("prompt_tokens", self.token_counter.count_messages(self.messages))
-                    self.last_completion_tokens = usage.get("completion_tokens", self.token_counter.count(content))
-                    
                     parsed_calls = []
                     for tc in raw_tool_calls:
                         if tc.get("type") == "function":
@@ -974,24 +539,33 @@ class Agent:
                                 args = {}
                             parsed_calls.append({"id": tc["id"], "name": tc["function"]["name"], "args": args})
                     return content, parsed_calls
-                    
             except requests.exceptions.HTTPError as e:
                 status = e.response.status_code if e.response else 0
+                body = ""
+                try:
+                    body = e.response.text[:500] if e.response else ""
+                except:
+                    pass
+                print(f"[HTTP Error {status}, attempt {attempt + 1}] {body}")
                 if status in (401, 403, 429):
                     TokenManager.rotate_token()
+                time.sleep(2 ** attempt)
+            except requests.exceptions.ConnectionError as e:
+                print(f"[Connection Error, attempt {attempt + 1}] {e}")
+                time.sleep(2 ** attempt)
+            except requests.exceptions.Timeout as e:
+                print(f"[Timeout Error, attempt {attempt + 1}] {e}")
                 time.sleep(2 ** attempt)
             except Exception as e:
                 print(f"[Error: {type(e).__name__}: {e}, attempt {attempt + 1}]")
                 time.sleep(2 ** attempt)
-        
         return "[Error: All API attempts failed]", []
 
 
-# --- Tool Execution ---
 def execute_tool(tool_call: dict) -> str:
     """Execute a tool call and return result"""
     from tools import (
-        execute_pwsh, run_on_host, control_pwsh_process, list_processes, get_process_output,
+        execute_pwsh, control_pwsh_process, list_processes, get_process_output,
         list_directory, read_file, read_multiple_files, read_code, file_search, grep_search,
         delete_file, fs_write, fs_append, str_replace, get_diagnostics, property_coverage,
         insert_lines, remove_lines, move_file, copy_file, create_directory, undo,
@@ -1004,7 +578,7 @@ def execute_tool(tool_call: dict) -> str:
     args = tool_call.get("args", {})
 
     REQUIRED_PARAMS = {
-        "executePwsh": ["command"], "runOnHost": ["command"], "readFile": ["path"], "fsWrite": ["path", "content"],
+        "executePwsh": ["command"], "readFile": ["path"], "fsWrite": ["path", "content"],
         "fsAppend": ["path", "content"], "strReplace": ["path", "old", "new"],
         "deleteFile": ["path"], "getDiagnostics": ["path"], "fileSearch": ["pattern"],
         "grepSearch": ["pattern"], "getProcessOutput": ["processId"], "controlPwshProcess": ["action"],
@@ -1019,9 +593,6 @@ def execute_tool(tool_call: dict) -> str:
     try:
         if name == "executePwsh":
             result = execute_pwsh(args["command"], args.get("timeout", 60))
-            return f"stdout: {result['stdout']}\nstderr: {result['stderr']}\nreturncode: {result['returncode']}"
-        elif name == "runOnHost":
-            result = run_on_host(args["command"], args.get("timeout", 60))
             return f"stdout: {result['stdout']}\nstderr: {result['stderr']}\nreturncode: {result['returncode']}"
         elif name == "controlPwshProcess":
             return json.dumps(control_pwsh_process(args["action"], args.get("command"), args.get("processId"), args.get("path")))
@@ -1063,6 +634,13 @@ def execute_tool(tool_call: dict) -> str:
                     output.append(f"Functions: {', '.join(f['name'] for f in s['functions'])}")
                 if s.get('classes'):
                     output.append(f"Classes: {', '.join(c['name'] for c in s['classes'])}")
+                if s.get('imports'):
+                    output.append(f"Imports: {len(s['imports'])} imports")
+            if 'symbol_search' in result:
+                ss = result['symbol_search']
+                output.append(f"\n--- Symbol '{ss['symbol']}' found {ss['occurrences']} times ---")
+                for loc in ss['locations'][:10]:
+                    output.append(f"{'[DEF] ' if loc['is_definition'] else '      '}Line {loc['line']}: {loc['text']}")
             return "\n".join(output)
         elif name == "fileSearch":
             result = file_search(args["pattern"], args.get("path", "."))
@@ -1117,18 +695,27 @@ def execute_tool(tool_call: dict) -> str:
             if "error" in result:
                 return f"Search error: {result['error']}"
             output = [f"Search results for: {result['query']}"]
+            if result.get("site_filter"):
+                output.append(f"(filtered to: {result['site_filter']})")
+            output.append("")
             for i, r in enumerate(result.get("results", []), 1):
                 output.append(f"{i}. {r['title']}")
                 output.append(f"   URL: {r['url']}")
+                if r.get('snippet'):
+                    output.append(f"   {r['snippet'][:200]}")
+                output.append("")
             return "\n".join(output) or "No results found"
         elif name == "searchStackOverflow":
             result = search_stackoverflow(args["query"], max_results=args.get("maxResults", 5))
             if "error" in result:
                 return f"Search error: {result['error']}"
-            output = [f"Stack Overflow results for: {result['query']}"]
+            output = [f"Stack Overflow results for: {result['query']}", ""]
             for i, r in enumerate(result.get("results", []), 1):
                 output.append(f"{i}. {r['title']}")
                 output.append(f"   URL: {r['url']}")
+                if r.get('snippet'):
+                    output.append(f"   {r['snippet'][:200]}")
+                output.append("")
             return "\n".join(output) or "No results found"
         elif name == "interactWithUser":
             return json.dumps(interact_with_user(args["message"], args.get("interactionType", "info")))

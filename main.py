@@ -1,4 +1,7 @@
-
+#!/usr/bin/env python3
+"""
+Supercoder - Production-ready AI-powered code generation and task execution
+"""
 from __future__ import annotations
 
 import os
@@ -7,68 +10,13 @@ import json
 import re
 import shutil
 import subprocess
-import time
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Set
 
-# Try prompt_toolkit first (best terminal handling), fall back to readline
-PROMPT_TOOLKIT_AVAILABLE = False
-READLINE_AVAILABLE = False
-
-try:
-    from prompt_toolkit import prompt as pt_prompt
-    from prompt_toolkit.history import FileHistory
-    from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
-    from prompt_toolkit.styles import Style
-    PROMPT_TOOLKIT_AVAILABLE = True
-except ImportError:
-    # Fall back to readline
-    try:
-        import gnureadline as readline
-        READLINE_AVAILABLE = True
-    except ImportError:
-        try:
-            import readline
-            READLINE_AVAILABLE = True
-        except ImportError:
-            pass
-
-if READLINE_AVAILABLE and not PROMPT_TOOLKIT_AVAILABLE:
-    # Use emacs mode
-    readline.parse_and_bind('set editing-mode emacs')
-    
-    # History navigation
-    readline.parse_and_bind(r'"\e[A": previous-history')        # Up arrow
-    readline.parse_and_bind(r'"\e[B": next-history')            # Down arrow
-    readline.parse_and_bind(r'"\eOA": previous-history')        # Up arrow (alternate)
-    readline.parse_and_bind(r'"\eOB": next-history')            # Down arrow (alternate)
-    readline.parse_and_bind(r'"\e[C": forward-char')            # Right arrow
-    readline.parse_and_bind(r'"\e[D": backward-char')           # Left arrow
-    
-    # IMPORTANT: Backspace should delete ONE char, not a word!
-    readline.parse_and_bind(r'"\x7f": backward-delete-char')    # DEL/Backspace - delete ONE char
-    readline.parse_and_bind(r'"\x08": backward-delete-char')    # Ctrl+H - delete ONE char
-    
-    # Word deletion requires Ctrl+W or Alt+Backspace
-    readline.parse_and_bind(r'"\C-w": backward-kill-word')      # Ctrl+W - delete word back
-    readline.parse_and_bind(r'"\e\x7f": backward-kill-word')    # Alt+Backspace - delete word
-    readline.parse_and_bind(r'"\e[3;5~": backward-kill-word')   # Ctrl+Backspace (xterm)
-    
-    # Line editing
-    readline.parse_and_bind(r'"\C-u": unix-line-discard')       # Ctrl+U - delete entire line
-    readline.parse_and_bind(r'"\C-a": beginning-of-line')       # Ctrl+A - start of line
-    readline.parse_and_bind(r'"\C-e": end-of-line')             # Ctrl+E - end of line
-    readline.parse_and_bind(r'"\C-l": clear-screen')            # Ctrl+L - clear screen
-    readline.parse_and_bind(r'"\C-k": kill-line')               # Ctrl+K - delete to end
-    
-    # History with Ctrl+P/N
-    readline.parse_and_bind(r'"\C-p": previous-history')        # Ctrl+P - previous
-    readline.parse_and_bind(r'"\C-n": next-history')            # Ctrl+N - next
-
 import tools
-from Agentic import Agent, execute_tool, MODEL_LIMITS, TokenManager, G4F_FREE_MODELS, G4F_AVAILABLE, TEXT_TOOL_MODELS
+from Agentic import Agent, execute_tool, MODEL_LIMITS, TokenManager
 
 # Syntax highlighting
 try:
@@ -216,64 +164,19 @@ def divider() -> None:
 def _build_prompt() -> str:
     import getpass
     user = getpass.getuser()
-    # Use HOST_PWD if available (passed from Windows), otherwise use Linux cwd
-    host_pwd = os.environ.get("HOST_PWD", "")
-    if host_pwd:
-        cwd = Path(host_pwd).name or host_pwd
-    else:
-        cwd = Path.cwd().name or "~"
+    cwd = Path.cwd().name or "~"
     line1 = f"{C.BPURPLE}┌──({C.BRED}{user}{C.BPURPLE}@{C.BRED}supercoder{C.BPURPLE})-[{C.BOLD}{C.WHITE}{cwd}{C.RST}{C.BPURPLE}]{C.RST}"
     line2 = f"{C.BPURPLE}└─{C.BRED}${C.RST} "
     return f"{line1}\n{line2}"
-
-# Global history for prompt_toolkit
-_pt_history = None
-
-def _get_pt_history():
-    global _pt_history
-    if _pt_history is None and PROMPT_TOOLKIT_AVAILABLE:
-        history_file = Path.home() / ".supercoder" / "history"
-        history_file.parent.mkdir(parents=True, exist_ok=True)
-        _pt_history = FileHistory(str(history_file))
-    return _pt_history
 
 def get_input(prompt: str = None) -> str:
     try:
         if prompt is None:
             prompt = _build_prompt()
+            print(prompt, end="")
+            line = input()
         else:
-            prompt = _s(prompt, C.YELLOW)
-        
-        if PROMPT_TOOLKIT_AVAILABLE:
-            # Use prompt_toolkit for better terminal handling
-            try:
-                # Strip ANSI codes for prompt_toolkit (it handles styling differently)
-                # But we want to print our styled prompt first
-                print(prompt, end='')
-                line = pt_prompt(
-                    '',  # Empty prompt since we printed it
-                    history=_get_pt_history(),
-                    auto_suggest=AutoSuggestFromHistory(),
-                )
-            except (EOFError, KeyboardInterrupt):
-                print()
-                return "quit"
-        else:
-            # Fall back to readline/basic input
-            if READLINE_AVAILABLE:
-                try:
-                    readline.set_startup_hook(lambda: readline.insert_text(''))
-                except:
-                    pass
-            
-            line = input(prompt)
-            
-            if READLINE_AVAILABLE:
-                try:
-                    readline.set_startup_hook(None)
-                except:
-                    pass
-        
+            line = input(_s(prompt, C.YELLOW))
         stripped = line.strip()
         if stripped == "<<<" or stripped.startswith('"""'):
             end = ">>>" if stripped == "<<<" else '"""'
@@ -321,71 +224,6 @@ def get_context_limit(model_id: str) -> int:
         fetch_models()
     return _model_cache.get(model_id, {}).get("context_length", MODEL_LIMITS["default"])
 
-def get_model_pricing(model_id: str) -> Tuple[float, float]:
-    """Get pricing for a model (prompt_price, completion_price) per token."""
-    global _cache_loaded
-    if not _cache_loaded:
-        fetch_models()
-    
-    model_info = _model_cache.get(model_id, {})
-    pricing = model_info.get("pricing", {})
-    
-    # OpenRouter returns price per token as a string
-    prompt_price = float(pricing.get("prompt", "0") or "0")
-    completion_price = float(pricing.get("completion", "0") or "0")
-    
-    return prompt_price, completion_price
-
-def is_free_model(model_id: str) -> bool:
-    """Check if a model is free (either g4f or free OpenRouter model)."""
-    # G4F models are always free
-    if model_id in G4F_FREE_MODELS:
-        return True
-    
-    # Check OpenRouter pricing
-    prompt_price, completion_price = get_model_pricing(model_id)
-    return prompt_price == 0 and completion_price == 0
-
-class CostTracker:
-    """Track API costs for the session."""
-    
-    def __init__(self):
-        self.total_cost = 0.0
-        self.total_prompt_tokens = 0
-        self.total_completion_tokens = 0
-        self.query_count = 0
-    
-    def add_query(self, model_id: str, prompt_tokens: int, completion_tokens: int) -> float:
-        """Add a query and return its cost."""
-        prompt_price, completion_price = get_model_pricing(model_id)
-        
-        query_cost = (prompt_tokens * prompt_price) + (completion_tokens * completion_price)
-        
-        self.total_cost += query_cost
-        self.total_prompt_tokens += prompt_tokens
-        self.total_completion_tokens += completion_tokens
-        self.query_count += 1
-        
-        return query_cost
-    
-    def format_cost(self, cost: float) -> str:
-        """Format cost for display."""
-        if cost == 0:
-            return "free"
-        elif cost < 0.0001:
-            return f"<$0.0001"
-        elif cost < 0.01:
-            return f"${cost:.4f}"
-        else:
-            return f"${cost:.2f}"
-    
-    def get_summary(self) -> str:
-        """Get session cost summary."""
-        return f"Session: {self.format_cost(self.total_cost)} ({self.total_prompt_tokens + self.total_completion_tokens:,} tokens, {self.query_count} queries)"
-
-# Global cost tracker
-_cost_tracker = CostTracker()
-
 def model_exists(model_id: str) -> bool:
     global _cache_loaded
     if model_id in _model_cache:
@@ -394,26 +232,20 @@ def model_exists(model_id: str) -> bool:
         fetch_models()
     return model_id in _model_cache
 
-def display_models(models: List[Dict[str, Any]], filter_text: str = "") -> Tuple[List, List]:
-    """Separate models into free and paid, return both lists."""
+def display_models(models: List[Dict[str, Any]], filter_text: str = "") -> None:
+    if not models:
+        status("No models available", "warning")
+        return
     if filter_text:
         fl = filter_text.lower()
         models = [m for m in models if fl in m.get("id", "").lower() or fl in m.get("name", "").lower()]
-    
-    free_models = []
-    paid_models = []
-    
-    for m in models:
-        pricing = m.get("pricing", {})
-        prompt_price = float(pricing.get("prompt", "1") or "1")
-        completion_price = float(pricing.get("completion", "1") or "1")
-        
-        if prompt_price == 0 and completion_price == 0:
-            free_models.append(m)
-        else:
-            paid_models.append(m)
-    
-    return sorted(free_models, key=lambda m: m.get("id", "")), sorted(paid_models, key=lambda m: m.get("id", ""))
+    models = sorted(models, key=lambda m: m.get("id", ""))
+    print()
+    print(_s(f"  Available Models ({len(models)}):", C.BOLD))
+    for i, m in enumerate(models, 1):
+        ctx = m.get("context_length", "?")
+        print(_s(f"  {i:3}. ", C.DIM) + _s(m.get("id", "?"), C.CYAN) + _s(f" ({ctx:,} ctx)", C.DIM))
+    print()
 
 
 # ==============================================================================
@@ -527,207 +359,6 @@ def _syntax_highlight(code: str, filename: str = "") -> str:
     except Exception:
         return code
 
-def _highlight_by_language(code: str, language: str) -> str:
-    """Apply syntax highlighting based on language name."""
-    if not PYGMENTS_AVAILABLE or not code.strip():
-        return code
-    try:
-        lexer = get_lexer_by_name(language, stripall=True)
-        formatter = Terminal256Formatter(style='monokai')
-        return highlight(code, lexer, formatter).rstrip()
-    except ClassNotFound:
-        return code
-    except Exception:
-        return code
-
-class StreamingHighlighter:
-    """Handles streaming output - shows spinner during tool calls, prettifies code blocks."""
-    
-    def __init__(self, suppress_pre_tool_text: bool = False):
-        self.buffer = ""
-        self.in_code_block = False
-        self.in_tool_call = False  # Track if we're inside a tool_call block
-        self.code_language = ""
-        self.code_buffer = ""
-        self.code_start_line = 0
-        self.lines_printed = 0
-        self.total_chars = 0
-        self.tool_call_chars = 0  # Track chars in current tool call
-        self.last_visible_time = time.time()
-        self.spinner_shown = False
-        self.spinner_chars = "|/-\\"
-        self.spinner_idx = 0
-        self.last_spinner_update = 0
-        self.suppress_pre_tool_text = suppress_pre_tool_text  # Don't print text before tool calls
-        self.seen_tool_call = False  # Track if we've seen any tool call this response
-    
-    def _clear_lines(self, n: int) -> None:
-        """Clear n lines above cursor (for rewriting code blocks)."""
-        if n <= 0:
-            return
-        for _ in range(n):
-            sys.stdout.write('\033[A')
-            sys.stdout.write('\033[2K')
-        sys.stdout.write('\r')
-        sys.stdout.flush()
-    
-    def _clear_spinner(self) -> None:
-        """Clear the spinner line if shown."""
-        if self.spinner_shown:
-            sys.stdout.write('\r\033[2K')
-            sys.stdout.flush()
-            self.spinner_shown = False
-    
-    def _show_spinner(self) -> None:
-        """Show/update the token counter spinner."""
-        now = time.time()
-        # Only update spinner every 100ms to avoid flicker
-        if now - self.last_spinner_update < 0.1:
-            return
-        self.last_spinner_update = now
-        
-        self.spinner_idx = (self.spinner_idx + 1) % len(self.spinner_chars)
-        spinner = self.spinner_chars[self.spinner_idx]
-        # Estimate tokens (~4 chars per token)
-        tokens = self.tool_call_chars // 4
-        sys.stdout.write(f'\r{C.DIM}{spinner} Thinking... {tokens} tokens{C.RST}')
-        sys.stdout.flush()
-        self.spinner_shown = True
-    
-    def process_chunk(self, chunk: str) -> None:
-        """Process a streaming chunk - show spinner during tool calls, print text otherwise."""
-        
-        # Check for tool call progress signal (from OpenRouter native tool calls)
-        if chunk.startswith('\x00TOOL:'):
-            try:
-                chars = int(chunk[6:])
-                self.tool_call_chars += chars
-            except:
-                self.tool_call_chars += 10
-            self._show_spinner()
-            return
-        
-        self.total_chars += len(chunk)
-        self.buffer += chunk
-        
-        # Check if we're entering a tool_call block (g4f text-based tool calls)
-        # Look for the pattern in the accumulated buffer
-        if not self.in_tool_call:
-            # Check for tool_call start - be flexible with whitespace
-            tool_start = self.buffer.find('```tool_call')
-            if tool_start == -1:
-                tool_start = self.buffer.find('```tool')  # Partial match
-            if tool_start >= 0 and 'tool' in self.buffer[tool_start:]:
-                # Found start of tool call
-                self.in_tool_call = True
-                self.seen_tool_call = True
-                self.tool_call_chars = len(self.buffer) - tool_start
-                # Print anything before the tool_call block (unless suppressed)
-                if tool_start > 0 and not self.suppress_pre_tool_text:
-                    before = self.buffer[:tool_start]
-                    if before.strip():
-                        print(before, end='', flush=True)
-                self.buffer = self.buffer[tool_start:]
-                self._show_spinner()
-                return
-        
-        if self.in_tool_call:
-            self.tool_call_chars += len(chunk)
-            self._show_spinner()
-            
-            # Check if tool_call block ended - need closing ```
-            # Count ``` occurrences - first is opening, second is closing
-            backtick_count = self.buffer.count('```')
-            if backtick_count >= 2:
-                # Find the closing ``` (not the opening one)
-                first_pos = self.buffer.find('```')
-                if first_pos >= 0:
-                    second_pos = self.buffer.find('```', first_pos + 3)
-                    if second_pos >= 0:
-                        # Tool call complete
-                        self._clear_spinner()
-                        self.in_tool_call = False
-                        # Keep anything after the closing ```
-                        remainder = self.buffer[second_pos + 3:]
-                        self.buffer = remainder
-                        self.tool_call_chars = 0
-                        # Process remainder if any
-                        if remainder.strip():
-                            # Recursively process the remainder
-                            temp = remainder
-                            self.buffer = ""
-                            self.process_chunk(temp)
-            return
-        
-        # Not in tool call - print visible content
-        
-        # Not in tool call - print visible content
-        if chunk.strip():
-            self._clear_spinner()
-            print(chunk, end='', flush=True)
-            self.last_visible_time = time.time()
-            self.lines_printed += chunk.count('\n')
-            
-            # Handle code block prettification
-            if not self.in_code_block:
-                match = re.search(r'```(\w*)\n', self.buffer)
-                if match and match.group(1) != 'tool_call':
-                    self.in_code_block = True
-                    self.code_language = match.group(1) or "text"
-                    self.code_start_line = self.lines_printed - self.buffer[match.end():].count('\n') - 1
-                    self.code_buffer = self.buffer[match.end():]
-                    self.buffer = ""
-            else:
-                self.code_buffer += chunk
-                if '```' in self.code_buffer:
-                    end_match = re.search(r'```', self.code_buffer)
-                    if end_match:
-                        code_content = self.code_buffer[:end_match.start()].rstrip('\n')
-                        code_lines = code_content.count('\n') + 1
-                        lines_to_clear = code_lines + 2
-                        
-                        self._clear_lines(lines_to_clear)
-                        print(f"{C.DIM}```{self.code_language}{C.RST}")
-                        if PYGMENTS_AVAILABLE and code_content.strip():
-                            highlighted = _highlight_by_language(code_content, self.code_language)
-                            print(highlighted)
-                        else:
-                            print(code_content)
-                        print(f"{C.DIM}```{C.RST}", flush=True)
-                        
-                        self.in_code_block = False
-                        self.code_language = ""
-                        self.code_buffer = ""
-                        self.buffer = self.code_buffer[end_match.end():]
-                        self.lines_printed = 0
-    
-    def flush(self) -> None:
-        """Flush any remaining content."""
-        self._clear_spinner()
-        
-        # If we're in an unclosed code block, prettify what we have
-        if self.in_code_block and self.code_buffer.strip():
-            code_content = self.code_buffer.rstrip('\n')
-            code_lines = code_content.count('\n') + 1
-            lines_to_clear = code_lines + 1
-            
-            self._clear_lines(lines_to_clear)
-            
-            print(f"{C.DIM}```{self.code_language}{C.RST}")
-            if PYGMENTS_AVAILABLE:
-                highlighted = _highlight_by_language(code_content, self.code_language)
-                print(highlighted)
-            else:
-                print(code_content)
-            print(f"{C.DIM}```{C.RST}", flush=True)
-        
-        self.buffer = ""
-        self.code_buffer = ""
-        self.in_code_block = False
-        self.in_tool_call = False
-        self.lines_printed = 0
-        self.tool_call_chars = 0
-
 def _print_highlighted_lines(content: str, filename: str, prefix: str = "", line_nums: bool = True, color_override: str = None) -> None:
     """Print content with syntax highlighting and optional line numbers."""
     if PYGMENTS_AVAILABLE and filename:
@@ -811,7 +442,6 @@ def print_tool(name: str, args: Dict[str, Any], result: str, compact: bool = Tru
                 print(f"    {C.GRAY}{line[:150]}{C.RST}")
             if len(display.split('\n')) > 15:
                 print(f"    {C.GRAY}... ({len(display.split(chr(10))) - 15} more lines){C.RST}")
-    sys.stdout.flush()
 
 def _print_completion_box(summary: str, success: bool = True) -> None:
     """Print a nice completion box with the summary."""
@@ -836,14 +466,13 @@ def _print_completion_box(summary: str, success: bool = True) -> None:
     
     print()
     print(f"  {border_color}╭{'─' * 70}╮{C.RST}")
-    print(f"  {border_color}│{C.RST}  {color}{icon} COMPLETE{C.RST}{' ' * 58}{border_color}│{C.RST}")
+    print(f"  {border_color}│{C.RST}  {color}{icon} COMPLETE{C.RST}{' ' * 57}{border_color}│{C.RST}")
     print(f"  {border_color}├{'─' * 70}┤{C.RST}")
     for line in lines:
         padding = 68 - len(line)
         print(f"  {border_color}│{C.RST}  {line}{' ' * padding}{border_color}│{C.RST}")
     print(f"  {border_color}╰{'─' * 70}╯{C.RST}")
     print()
-    sys.stdout.flush()
 
 def build_continue_prompt(state: State, last_tools: List[str], had_content: bool) -> str:
     """Build a context-rich continue prompt based on what just happened."""
@@ -1000,8 +629,6 @@ def cmd_help(state: State, agent: Agent, args: str) -> None:
 
 @cmd("status", "Show session status")
 def cmd_status(state: State, agent: Agent, args: str) -> None:
-    from tools import get_docker_mode_status
-    
     usage = agent.get_token_usage()
     print()
     print(_s("  Session Status:", C.BOLD))
@@ -1010,14 +637,6 @@ def cmd_status(state: State, agent: Agent, args: str) -> None:
     print(f"  Auto mode: {_s('ON' if state.auto_mode else 'OFF', C.GREEN if state.auto_mode else C.RED)} (cap: {state.auto_cap})")
     print(f"  Output: {_s('VERBOSE' if state.verbose else ('COMPACT' if state.compact else 'NORMAL'), C.CYAN)}")
     print(f"  Verify: {state.verify_mode}")
-    print(f"  Mode: {_s(get_docker_mode_status(), C.CYAN)}")
-    
-    # Show cost for paid models
-    if not agent.use_g4f and not is_free_model(agent.model):
-        print(f"  Cost: {_s(_cost_tracker.get_summary(), C.YELLOW)}")
-    else:
-        print(f"  Cost: {_s('free', C.GREEN)}")
-    
     if state.pinned:
         print(f"  Pinned: {', '.join(Path(p).name for p in state.pinned)}")
     if state.task:
@@ -1029,69 +648,6 @@ def cmd_clear(state: State, agent: Agent, args: str) -> None:
     agent.clear_history(keep_system=True)
     state.reset_task()
     status("Conversation cleared", "success")
-
-@cmd("cd", "Change directory (within workspace)")
-def cmd_cd(state: State, agent: Agent, args: str) -> None:
-    path = args.strip()
-    host_pwd = os.environ.get("HOST_PWD", "")
-    
-    if not path:
-        # Show current directory
-        if host_pwd:
-            status(f"Current directory: {host_pwd}", "info")
-        else:
-            status(f"Current directory: {os.getcwd()}", "info")
-        return
-    
-    try:
-        # Convert Windows path to Linux path if needed
-        # C:\Projects -> /C/Projects
-        if re.match(r'^[A-Za-z]:[/\\]', path):
-            drive = path[0].upper()
-            rest = path[2:].replace('\\', '/')
-            path = f"/{drive}{rest}"
-        
-        # Handle ~ as home directory (user's home on the mounted drive)
-        if path == "~":
-            # Try to go to user's home
-            userprofile = os.environ.get("USERPROFILE", "")
-            if userprofile:
-                drive = userprofile[0].upper()
-                rest = userprofile[2:].replace('\\', '/')
-                path = f"/{drive}{rest}"
-            else:
-                status("Could not determine home directory", "error")
-                return
-        
-        # Resolve the path
-        if path.startswith("/"):
-            target_path = Path(path)
-        else:
-            target_path = (Path.cwd() / path).resolve()
-        
-        if not target_path.exists():
-            status(f"Directory not found: {args.strip()}", "error")
-            return
-        if not target_path.is_dir():
-            status(f"Not a directory: {args.strip()}", "error")
-            return
-        
-        # Change directory
-        os.chdir(target_path)
-        
-        # Update HOST_PWD to show Windows path
-        # /C/Projects -> C:\Projects
-        linux_path = str(target_path)
-        if re.match(r'^/[A-Za-z]/', linux_path):
-            drive = linux_path[1].upper()
-            rest = linux_path[2:].replace('/', '\\')
-            os.environ["HOST_PWD"] = f"{drive}:{rest}"
-        else:
-            os.environ["HOST_PWD"] = linux_path
-        
-        status(f"Changed to: {os.environ['HOST_PWD']}", "success")
-    except Exception as e:
-        status(f"Error: {e}", "error")
 
 @cmd("auto", "Toggle autonomous mode (auto on|off) or set cap (auto cap N)")
 def cmd_auto(state: State, agent: Agent, args: str) -> None:
@@ -1210,117 +766,21 @@ def cmd_model(state: State, agent: Agent, args: str) -> None:
     if not new_model:
         status(f"Current model: {agent.model}", "info")
         status(f"Context limit: {agent.max_context:,} tokens", "info")
-        status(f"Provider: {'g4f (FREE)' if agent.use_g4f else 'OpenRouter'}", "info")
         return
-    
-    # Check if it's a g4f free model
-    if new_model in G4F_FREE_MODELS:
-        old = agent.model
-        agent.model = new_model
-        agent.use_g4f = True
-        agent.max_context = G4F_FREE_MODELS[new_model].get("context", 128000)
-        status(f"Switched from {old} to {new_model} (FREE via g4f)", "success")
-        status(f"Context limit: {agent.max_context:,} tokens", "info")
-        return
-    
-    # Check OpenRouter models
     if not model_exists(new_model):
         status(f"Model not found: {new_model}", "error")
-        status("Use 'freemodels' to see free g4f models, or 'models' for OpenRouter", "info")
         return
     old = agent.model
     agent.model = new_model
-    agent.use_g4f = False
     agent.max_context = get_context_limit(new_model)
     status(f"Switched from {old} to {new_model}", "success")
     status(f"Context limit: {agent.max_context:,} tokens", "info")
 
-@cmd("freemodels", "List free g4f models (no API key needed)", shortcuts=["fm"])
-def cmd_freemodels(state: State, agent: Agent, args: str) -> None:
-    if not G4F_AVAILABLE:
-        status("g4f not installed. Run: pip install g4f", "error")
-        return
-    print()
-    print(_s("  Free Models (via g4f - no API key needed):", C.BOLD))
-    print(_s("  " + "─" * 50, C.DIM))
-    for name, info in sorted(G4F_FREE_MODELS.items()):
-        current = " ← current" if name == agent.model else ""
-        print(f"  {_s(name, C.CYAN)}: {info['description']}{_s(current, C.GREEN)}")
-    print()
-    print(_s("  Switch with: model <name>", C.DIM))
-    print()
-
-@cmd("models", "List all available models (free and paid)")
+@cmd("models", "List available OpenRouter models")
 def cmd_models(state: State, agent: Agent, args: str) -> None:
-    filter_text = args.strip().lower()
-    
-    print()
-    print(_s("═" * 70, C.BPURPLE))
-    print(_s("  ALL AVAILABLE MODELS", C.BOLD))
-    print(_s("═" * 70, C.BPURPLE))
-    
-    # ═══════════════════════════════════════════════════════════════════════
-    # CATEGORY 1: G4F FREE MODELS (No API Key Required)
-    # ═══════════════════════════════════════════════════════════════════════
-    g4f_models = list(G4F_FREE_MODELS.items())
-    if filter_text:
-        g4f_models = [(k, v) for k, v in g4f_models if filter_text in k.lower() or filter_text in v.get("description", "").lower()]
-    g4f_models = sorted(g4f_models, key=lambda x: x[0])
-    
-    print()
-    print(_s(f"  ┌─ [1] G4F FREE - No API Key Required ({len(g4f_models)} models) ─────────────┐", C.GREEN + C.BOLD))
-    print()
-    for name, info in g4f_models:
-        current = " ← CURRENT" if name == agent.model else ""
-        desc = info.get("description", "")
-        print(f"    {_s(name, C.CYAN):35} {_s(desc, C.DIM)}{_s(current, C.GREEN + C.BOLD)}")
-    print()
-    
-    # ═══════════════════════════════════════════════════════════════════════
-    # CATEGORY 2 & 3: OpenRouter Models (Free and Paid)
-    # ═══════════════════════════════════════════════════════════════════════
-    print(_s("  Fetching OpenRouter models...", C.DIM))
-    
-    try:
-        models = fetch_models()
-        if models:
-            or_free, or_paid = display_models(models, filter_text)
-            
-            # CATEGORY 2: OpenRouter FREE
-            print()
-            print(_s(f"  ┌─ [2] OPENROUTER FREE - Requires Free API Key ({len(or_free)} models) ──┐", C.GREEN + C.BOLD))
-            print()
-            for m in or_free:
-                model_id = m.get("id", "?")
-                ctx = m.get("context_length", 0)
-                ctx_str = f"{ctx//1000}k" if ctx >= 1000 else str(ctx)
-                current = " ← CURRENT" if model_id == agent.model else ""
-                print(f"    {_s(model_id, C.CYAN):50} {_s(f'({ctx_str})', C.DIM)}{_s(current, C.GREEN + C.BOLD)}")
-            print()
-            
-            # CATEGORY 3: OpenRouter PAID
-            print()
-            print(_s(f"  ┌─ [3] OPENROUTER PAID ({len(or_paid)} models) ─────────────────────────┐", C.YELLOW + C.BOLD))
-            print()
-            for m in or_paid:
-                model_id = m.get("id", "?")
-                ctx = m.get("context_length", 0)
-                ctx_str = f"{ctx//1000}k" if ctx >= 1000 else str(ctx)
-                pricing = m.get("pricing", {})
-                price = float(pricing.get("prompt", "0") or "0") * 1000000
-                price_str = f"${price:.2f}/M" if price > 0 else ""
-                current = " ← CURRENT" if model_id == agent.model else ""
-                print(f"    {_s(model_id, C.CYAN):50} {_s(f'({ctx_str}) {price_str}', C.DIM)}{_s(current, C.GREEN + C.BOLD)}")
-            print()
-            
-    except Exception as e:
-        status(f"Could not fetch OpenRouter models: {e}", "warning")
-        print(_s("  Visit https://openrouter.ai/models to see OpenRouter models", C.DIM))
-    
-    print(_s("═" * 70, C.BPURPLE))
-    print(_s("  Usage: model <name>  |  G4F models need no API key!", C.DIM))
-    print(_s("═" * 70, C.BPURPLE))
-    print()
+    status("Fetching models...", "context")
+    models = fetch_models()
+    display_models(models, args.strip())
 
 @cmd("index", "Rebuild retrieval index")
 def cmd_index(state: State, agent: Agent, args: str) -> None:
@@ -1372,50 +832,8 @@ def cmd_tokens(state: State, agent: Agent, args: str) -> None:
     TokenManager.load_tokens()
     status(f"Saved {len(new_tokens)} token(s) globally", "success")
 
-@cmd("docker", "Toggle Docker mode (docker on|off)")
-def cmd_docker(state: State, agent: Agent, args: str) -> None:
-    from tools import is_docker_mode, is_inside_docker, set_docker_mode, get_docker_mode_status
-    
-    arg = args.strip().lower()
-    
-    if is_inside_docker():
-        status("Already running inside Docker container", "info")
-        return
-    
-    if not arg or arg == "status":
-        status(f"Docker mode: {get_docker_mode_status()}", "info")
-        return
-    
-    if arg == "on":
-        # Check if Docker is available
-        try:
-            result = subprocess.run(["docker", "info"], capture_output=True, timeout=10)
-            if result.returncode != 0:
-                status("Docker is not running. Please start Docker Desktop.", "error")
-                return
-        except FileNotFoundError:
-            status("Docker is not installed.", "error")
-            return
-        except Exception as e:
-            status(f"Could not check Docker: {e}", "error")
-            return
-        
-        set_docker_mode(True)
-        status("Docker mode enabled. Commands will run in Docker container.", "success")
-        status("Note: runOnHost tool is now available for GUI apps.", "info")
-    elif arg == "off":
-        set_docker_mode(False)
-        status("Docker mode disabled. Running natively.", "success")
-    else:
-        status("Usage: docker [on|off|status]", "warning")
-
 @cmd("quit", "Exit supercoder", shortcuts=["exit", "q"])
 def cmd_quit(state: State, agent: Agent, args: str) -> None:
-    # Save command history
-    try:
-        readline.write_history_file(str(Path.home() / ".supercoder" / "history"))
-    except:
-        pass
     print(f"\n  {C.BPURPLE}Goodbye!{C.RST}\n")
     sys.exit(0)
 
@@ -1556,86 +974,12 @@ def _verify_writes(state: State) -> None:
 _last_interrupt: float = 0.0
 _INTERRUPT_WINDOW: float = 2.0
 
-def _check_and_prompt_tokens(agent: Agent) -> None:
-    """Check if API tokens exist, prompt user to input if missing."""
-    # G4F models don't need API tokens
-    if agent.use_g4f:
-        if G4F_AVAILABLE:
-            status(f"Using FREE model: {agent.model} (via g4f - no API key needed!)", "success")
-        else:
-            status("g4f not installed! Run: pip install g4f", "error")
-        return
-    
-    # OpenRouter models need API key
-    try:
-        TokenManager.load_tokens()
-        token = TokenManager.get_token()
-        if token:
-            status(f"Using model: {agent.model} (OpenRouter)", "success")
-            return
-    except:
-        pass
-    
-    # No token found - prompt user
-    print()
-    status("OpenRouter API key required!", "warning")
-    print()
-    print(_s(f"  Model '{agent.model}' requires an OpenRouter API key.", C.WHITE))
-    print(_s("  Get a FREE key at: https://openrouter.ai/keys", C.CYAN))
-    print()
-    print(_s("  Options:", C.BOLD))
-    print(_s("  1. Enter your OpenRouter API key", C.WHITE))
-    print(_s("  2. Press Enter to use g4f free models (no key needed)", C.GREEN))
-    print()
-    
-    choice = input(_s("  Enter API key (or press Enter for free models): ", C.YELLOW)).strip()
-    
-    if not choice:
-        # Switch to g4f free model
-        agent.model = "kimi-k2"
-        agent.use_g4f = True
-        agent.max_context = G4F_FREE_MODELS["kimi-k2"]["context"]
-        status("Switched to kimi-k2 (FREE g4f model - no API key needed!)", "success")
-        return
-    
-    # Save the token
-    tokens_path = Path.home() / ".supercoder" / "tokens.txt"
-    tokens_path.parent.mkdir(parents=True, exist_ok=True)
-    tokens_path.write_text(choice + "\n")
-    
-    TokenManager._tokens = None
-    TokenManager._current_index = 0
-    TokenManager.load_tokens()
-    
-    status(f"API token saved! Using {agent.model}", "success")
-    print()
-
 def run(agent: Agent, state: State) -> None:
     global _last_interrupt
     import time as _time
-    
-    # Set up command history (only for readline fallback, prompt_toolkit handles its own)
-    if READLINE_AVAILABLE and not PROMPT_TOOLKIT_AVAILABLE:
-        history_file = Path.home() / ".supercoder" / "history"
-        try:
-            history_file.parent.mkdir(parents=True, exist_ok=True)
-            if history_file.exists():
-                readline.read_history_file(str(history_file))
-            readline.set_history_length(1000)
-        except:
-            pass
-    
     header()
-    
-    # Show help on startup
-    cmd_help(state, agent, "")
-    
-    # Check for API keys and prompt if missing (only for non-g4f models)
-    _check_and_prompt_tokens(agent)
-    
-    # Show Windows path if available, otherwise Linux path
-    display_cwd = os.environ.get("HOST_PWD", os.getcwd())
-    status(f"Working directory: {display_cwd}", "info")
+    status(f"Working directory: {os.getcwd()}", "info")
+    status("Type 'help' for commands, 'plan' to start a new project", "info")
     divider()
     done, total = _get_task_progress()
     if total > 0:
@@ -1679,33 +1023,12 @@ def run(agent: Agent, state: State) -> None:
                     status(f"Auto cap reached ({state.auto_cap} steps)", "warning")
                     break
                 state.auto_steps += 1
-                
-                # Use simple streaming - just print chunks directly, but filter out tool signals
                 def on_chunk(chunk: str):
-                    # Filter out internal tool call progress signals
-                    if chunk.startswith('\x00TOOL:'):
-                        return
                     print(chunk, end='', flush=True)
                 content, tool_calls = agent.PromptWithTools(full_prompt, streaming=True, on_chunk=on_chunk)
-                
                 had_content = bool(content)
                 if content:
                     print()
-                
-                # Show token usage for all models
-                tokens_used = agent.last_prompt_tokens + agent.last_completion_tokens
-                if tokens_used > 0:
-                    if not agent.use_g4f and not is_free_model(agent.model):
-                        query_cost = _cost_tracker.add_query(
-                            agent.model, 
-                            agent.last_prompt_tokens, 
-                            agent.last_completion_tokens
-                        )
-                        print(f"  {C.DIM}[{tokens_used:,} tokens, {_cost_tracker.format_cost(query_cost)}]{C.RST}")
-                    else:
-                        print(f"  {C.DIM}[{tokens_used:,} tokens]{C.RST}")
-                
-                sys.stdout.flush()
                 
                 # Track tools used this turn
                 tools_used_this_turn = []
@@ -1715,7 +1038,7 @@ def run(agent: Agent, state: State) -> None:
                     if state.auto_mode:
                         # If model just talked without acting, give it a nudge to use tools
                         if had_content:
-                            full_prompt = "Continue with the task. Use tools to make progress."
+                            full_prompt = "You just explained your plan. Now execute it by using the appropriate tools. Don't explain again - just act."
                         else:
                             full_prompt = build_continue_prompt(state, tools_used_this_turn, had_content)
                         continue
@@ -1776,11 +1099,6 @@ def run(agent: Agent, state: State) -> None:
         except KeyboardInterrupt:
             now = _time.time()
             if now - _last_interrupt < _INTERRUPT_WINDOW:
-                # Save command history
-                try:
-                    readline.write_history_file(str(Path.home() / ".supercoder" / "history"))
-                except:
-                    pass
                 print(f"\n\n  {C.BPURPLE}Goodbye!{C.RST}\n")
                 sys.exit(0)
             else:
@@ -1803,20 +1121,11 @@ def main():
             pass
     agent = Agent(
         initial_prompt=DEFAULT_EXECUTOR,
-        model="mistralai/devstral-2512:free",  # Free OpenRouter model for coding
+        model="qwen/qwen3-coder:free",
         streaming=True
     )
     state = State()
     run(agent, state)
 
 if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:
-        import traceback
-        print(f"\n\n{'='*60}")
-        print(f"FATAL ERROR: {e}")
-        print('='*60)
-        traceback.print_exc()
-        print('='*60)
-        input("\nPress Enter to exit...")
+    main()

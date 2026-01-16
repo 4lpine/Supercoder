@@ -74,15 +74,6 @@ Please carefully check all code for syntax errors, ensuring proper brackets, sem
 - Keep in mind that the current working directory is likely NOT to be the one with this file, so figure out which directory you are in first.
 - symbol search across files.
 
-**GUI APPLICATIONS - CRITICAL**
-- ALWAYS use `runOnHost` for GUI apps (pygame, tkinter, games, browsers, etc.)
-- NEVER use `executePwsh` for GUI apps - Docker cannot display windows
-- Go DIRECTLY to `runOnHost` - don't try `executePwsh` first
-- Use Windows path format with BACKSLASHES, not forward slashes
-- Use `&` not `&&` for command chaining on Windows
-- Example: `runOnHost(command="start python game.py")` - runs from current directory
-- Example with subdirectory: `runOnHost(command="cd snake_game & start python snake_game.py")`
-
 **LONG-RUNNING COMMANDS WARNING**
 
 - NEVER use shell commands for long-running processes like development servers, build watchers, or interactive applications
@@ -143,20 +134,10 @@ Code Analysis:
 - `findReferences(symbol, path?)` - Find symbol references
 
 Shell & Process:
-- `executePwsh(command, timeout?)` - Run shell command inside Docker (Linux). Use for CLI tools, scripts, builds.
-- `runOnHost(command, timeout?)` - Run command on Windows host. **USE THIS FOR GUI APPS** (pygame, tkinter, electron, browsers, file explorer, etc.) since Docker cannot display windows.
+- `executePwsh(command, timeout?)` - Run shell command
 - `controlPwshProcess(action, command?, processId?, path?)` - Background processes
 - `listProcesses()` - List running processes
 - `getProcessOutput(processId, lines?)` - Get process output
-
-**IMPORTANT: GUI Applications**
-When running GUI applications (games, desktop apps, anything with a window):
-- Use `runOnHost` NOT `executePwsh`
-- `executePwsh` runs inside Docker which has no display
-- `runOnHost` runs on the user's Windows machine where GUI can display
-- On Windows use `python` not `python3`
-- For GUI apps, use `start` to launch in new window: `runOnHost(command="start python snake_game.py")`
-- Examples: `runOnHost(command="start python game.py")`, `runOnHost(command="start notepad.exe")`
 
 Web Search (use when you need help or examples):
 - `webSearch(query, site?, maxResults?)` - Search the web for programming help
