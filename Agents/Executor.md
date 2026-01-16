@@ -78,7 +78,10 @@ Please carefully check all code for syntax errors, ensuring proper brackets, sem
 - ALWAYS use `runOnHost` for GUI apps (pygame, tkinter, games, browsers, etc.)
 - NEVER use `executePwsh` for GUI apps - Docker cannot display windows
 - Go DIRECTLY to `runOnHost` - don't try `executePwsh` first
-- Example: `runOnHost(command="start python snake_game.py")`
+- Use Windows path format with BACKSLASHES, not forward slashes
+- Use `&` not `&&` for command chaining on Windows
+- Example: `runOnHost(command="start python game.py")` - runs from current directory
+- Example with subdirectory: `runOnHost(command="cd snake_game & start python snake_game.py")`
 
 **LONG-RUNNING COMMANDS WARNING**
 
