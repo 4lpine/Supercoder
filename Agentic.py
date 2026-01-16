@@ -420,7 +420,12 @@ class Agent:
                 resp = requests.post(
                     "https://openrouter.ai/api/v1/chat/completions",
                     headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-                    json={"model": self.model, "messages": self.messages, "stream": streaming},
+                    json={
+                        "model": self.model,
+                        "messages": self.messages,
+                        "stream": streaming,
+                        "plugins": [{"id": "response-healing"}]
+                    },
                     timeout=120, stream=streaming
                 )
                 resp.raise_for_status()
@@ -478,7 +483,14 @@ class Agent:
                 resp = requests.post(
                     "https://openrouter.ai/api/v1/chat/completions",
                     headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-                    json={"model": self.model, "messages": self.messages, "tools": tools, "tool_choice": "auto", "stream": streaming},
+                    json={
+                        "model": self.model,
+                        "messages": self.messages,
+                        "tools": tools,
+                        "tool_choice": "auto",
+                        "stream": streaming,
+                        "plugins": [{"id": "response-healing"}]
+                    },
                     timeout=120, stream=streaming
                 )
                 resp.raise_for_status()
