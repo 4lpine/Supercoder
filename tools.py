@@ -89,21 +89,18 @@ def run_on_host(command: str, timeout: int = 60) -> Dict[str, Any]:
     cmd_file = os.path.join(host_cmd_dir, "cmd.txt")
     result_file = os.path.join(host_cmd_dir, "result.txt")
     done_file = os.path.join(host_cmd_dir, "done.txt")
-    lock_file = os.path.join(host_cmd_dir, "lock.txt")
     
     # Get the Windows path for current directory
     host_pwd = os.environ.get("HOST_PWD", "C:\\")
     
     try:
-        # Wait for any previous command to finish (lock released)
-        wait_start = _time.time()
-        while os.path.exists(lock_file) and _time.time() - wait_start < 5:
-            _time.sleep(0.1)
-        
         # Clean up any previous files
         for f in [result_file, done_file, cmd_file]:
             if os.path.exists(f):
                 os.remove(f)
+        
+        # Small delay to ensure cleanup is complete
+        _time.sleep(0.1)
         
         # Write command file
         with open(cmd_file, 'w') as f:
@@ -113,6 +110,8 @@ def run_on_host(command: str, timeout: int = 60) -> Dict[str, Any]:
         start = _time.time()
         while _time.time() - start < timeout:
             if os.path.exists(done_file):
+                # Small delay to ensure file is fully written
+                _time.sleep(0.05)
                 # Read result
                 if os.path.exists(result_file):
                     with open(result_file, 'r', encoding='utf-8', errors='replace') as f:
