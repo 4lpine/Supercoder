@@ -609,38 +609,54 @@ class StreamingHighlighter:
         self.buffer += chunk
         
         # Check if we're entering a tool_call block (g4f text-based tool calls)
-        if not self.in_tool_call and '```tool_call' in self.buffer:
-            self.in_tool_call = True
-            self.tool_call_chars = 0
-            # Don't print the tool_call marker, just start spinner
-            # Clear any partial output of the marker
-            idx = self.buffer.find('```tool_call')
-            if idx > 0:
-                # Print anything before the tool_call
-                before = self.buffer[:idx]
-                if before.strip():
-                    print(before, end='', flush=True)
-            self.buffer = self.buffer[idx:]
+        # Look for the pattern in the accumulated buffer
+        if not self.in_tool_call:
+            # Check for tool_call start - be flexible with whitespace
+            tool_start = self.buffer.find('```tool_call')
+            if tool_start == -1:
+                tool_start = self.buffer.find('```tool')  # Partial match
+            if tool_start >= 0 and 'tool' in self.buffer[tool_start:]:
+                # Found start of tool call
+                self.in_tool_call = True
+                self.tool_call_chars = len(self.buffer) - tool_start
+                # Print anything before the tool_call block
+                if tool_start > 0:
+                    before = self.buffer[:tool_start]
+                    if before.strip():
+                        print(before, end='', flush=True)
+                self.buffer = self.buffer[tool_start:]
+                self._show_spinner()
+                return
         
         if self.in_tool_call:
             self.tool_call_chars += len(chunk)
             self._show_spinner()
             
-            # Check if tool_call block ended
-            # Look for closing ``` after the opening ```tool_call
-            if self.buffer.count('```') >= 2:
-                # Find the closing ```
-                first_end = self.buffer.find('```', 3)  # Skip opening
-                if first_end > 0:
-                    second_end = self.buffer.find('```', first_end + 3)
-                    if second_end > 0:
+            # Check if tool_call block ended - need closing ```
+            # Count ``` occurrences - first is opening, second is closing
+            backtick_count = self.buffer.count('```')
+            if backtick_count >= 2:
+                # Find the closing ``` (not the opening one)
+                first_pos = self.buffer.find('```')
+                if first_pos >= 0:
+                    second_pos = self.buffer.find('```', first_pos + 3)
+                    if second_pos >= 0:
                         # Tool call complete
                         self._clear_spinner()
                         self.in_tool_call = False
                         # Keep anything after the closing ```
-                        self.buffer = self.buffer[second_end + 3:]
+                        remainder = self.buffer[second_pos + 3:]
+                        self.buffer = remainder
                         self.tool_call_chars = 0
+                        # Process remainder if any
+                        if remainder.strip():
+                            # Recursively process the remainder
+                            temp = remainder
+                            self.buffer = ""
+                            self.process_chunk(temp)
             return
+        
+        # Not in tool call - print visible content
         
         # Not in tool call - print visible content
         if chunk.strip():
