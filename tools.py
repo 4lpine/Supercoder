@@ -89,40 +89,61 @@ def run_on_host(command: str, timeout: int = 60) -> Dict[str, Any]:
     cmd_file = os.path.join(host_cmd_dir, "cmd.txt")
     result_file = os.path.join(host_cmd_dir, "result.txt")
     done_file = os.path.join(host_cmd_dir, "done.txt")
+    lock_file = os.path.join(host_cmd_dir, "lock.txt")
     
     # Get the Windows path for current directory
     host_pwd = os.environ.get("HOST_PWD", "C:\\")
     
     try:
+        # Wait for any previous command to finish (lock released)
+        wait_start = _time.time()
+        while os.path.exists(lock_file) and _time.time() - wait_start < 5:
+            _time.sleep(0.1)
+        
         # Clean up any previous files
         for f in [result_file, done_file, cmd_file]:
             if os.path.exists(f):
-                os.remove(f)
+                try:
+                    os.remove(f)
+                except:
+                    pass
         
         # Small delay to ensure cleanup is complete
-        _time.sleep(0.1)
+        _time.sleep(0.15)
         
-        # Write command file
-        with open(cmd_file, 'w') as f:
+        # Write command file atomically - write to temp then rename
+        temp_cmd = os.path.join(host_cmd_dir, "cmd.tmp")
+        with open(temp_cmd, 'w') as f:
             f.write(f"{command}\n{host_pwd}\n")
+        
+        # Rename to cmd.txt (atomic on most filesystems)
+        if os.path.exists(cmd_file):
+            os.remove(cmd_file)
+        os.rename(temp_cmd, cmd_file)
         
         # Wait for result
         start = _time.time()
         while _time.time() - start < timeout:
             if os.path.exists(done_file):
                 # Small delay to ensure file is fully written
-                _time.sleep(0.05)
+                _time.sleep(0.1)
                 # Read result
                 if os.path.exists(result_file):
-                    with open(result_file, 'r', encoding='utf-8', errors='replace') as f:
-                        output = f.read()
+                    try:
+                        with open(result_file, 'r', encoding='utf-8', errors='replace') as f:
+                            output = f.read()
+                    except:
+                        output = ""
                 else:
                     output = ""
                 
                 # Clean up
                 for f in [result_file, done_file]:
                     if os.path.exists(f):
-                        os.remove(f)
+                        try:
+                            os.remove(f)
+                        except:
+                            pass
                 
                 return {'stdout': output, 'stderr': '', 'returncode': 0}
             _time.sleep(0.1)
