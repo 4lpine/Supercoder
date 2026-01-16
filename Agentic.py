@@ -230,15 +230,21 @@ TEXT_TOOL_MODELS = {
 def _build_tools_prompt(tools: List[dict]) -> str:
     """Build a prompt describing available tools for text-based tool calling."""
     lines = [
-        "You have access to the following tools. To use a tool, respond with a JSON block in this EXACT format:",
+        "# TOOL CALLING INSTRUCTIONS",
+        "",
+        "You MUST use tools to complete tasks. Do NOT just describe what you would do - actually do it by calling tools.",
+        "",
+        "To call a tool, output a JSON block in this EXACT format:",
         "",
         "```tool_call",
-        '{"tool": "tool_name", "args": {"param1": "value1", "param2": "value2"}}',
+        '{"tool": "tool_name", "args": {"param1": "value1"}}',
         "```",
         "",
-        "You can call multiple tools by including multiple ```tool_call``` blocks.",
-        "After tool results are provided, continue working on the task.",
-        "When the task is complete, call the 'finish' tool with a summary.",
+        "IMPORTANT:",
+        "- Call tools IMMEDIATELY when you know what to do - don't explain first",
+        "- You can call multiple tools by including multiple ```tool_call``` blocks",
+        "- After tool results, continue working until the task is complete",
+        "- Call 'finish' tool when done",
         "",
         "Available tools:",
         ""
