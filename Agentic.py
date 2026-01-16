@@ -211,13 +211,18 @@ NATIVE_TOOLS = [
 MODEL_LIMITS = {
     "anthropic/claude-opus-4.5": 200000,
     "anthropic/claude-sonnet-4": 200000,
-    "qwen/qwen3-coder": 128000,
+    "qwen/qwen3-coder": 262144,
     "deepseek/deepseek-v3.2": 160000,
     "qwen/qwen3-235b-a22b": 128000,
     "anthropic/claude-3-opus": 200000,
     "anthropic/claude-3-sonnet": 200000,
     "openai/gpt-4-turbo": 128000,
     "default": 128000
+}
+
+# Models that work better with text-based tool calling instead of native
+TEXT_TOOL_MODELS = {
+    "qwen/qwen3-coder",  # Has issues with native tool calling
 }
 
 
@@ -576,6 +581,9 @@ class Agent:
         try:
             if self.use_g4f:
                 content, tool_calls = self._call_g4f_with_tools(tools, streaming=streaming, on_chunk=on_chunk)
+            elif self.model in TEXT_TOOL_MODELS:
+                # Use text-based tool calling for models that don't handle native tools well
+                content, tool_calls = self._call_openrouter_text_tools(tools, streaming=streaming, on_chunk=on_chunk)
             else:
                 content, tool_calls = self._call_openrouter_with_tools(tools, streaming=streaming, on_chunk=on_chunk)
         finally:
@@ -601,8 +609,8 @@ class Agent:
         return {"used": used, "max": self.max_context, "available": self.max_context - used - self.reserved_output, "percent": round(used / self.max_context * 100, 1)}
 
     def AddToolResult(self, tool_call_id: str, tool_name: str, result: str):
-        if self.use_g4f:
-            # For g4f, add tool results as user messages with clear formatting
+        if self.use_g4f or self.model in TEXT_TOOL_MODELS:
+            # For g4f and text-tool models, add tool results as user messages with clear formatting
             self.messages.append({"role": "user", "content": f"Tool '{tool_name}' returned:\n```\n{result}\n```\n\nContinue with the task. Use more tools if needed, or call 'finish' when done."})
         else:
             self.messages.append({"role": "tool", "tool_call_id": tool_call_id, "content": str(result)})
@@ -772,6 +780,88 @@ class Agent:
                 time.sleep(2 ** attempt)
         
         return "[Error: All API attempts failed]"
+
+    def _call_openrouter_text_tools(self, tools: List[dict], streaming: bool = False, on_chunk=None) -> Tuple[str, List[dict]]:
+        """Call OpenRouter API with text-based tool calling (for models that don't handle native tools well)."""
+        # Build tools prompt and inject into system message
+        tools_prompt = _build_tools_prompt(tools)
+        
+        max_retries = 5
+        for attempt in range(max_retries):
+            try:
+                token = TokenManager.get_token()
+                if not token:
+                    return "[Error: No API token]", []
+                
+                # Convert messages with tools prompt injected into system
+                api_messages = []
+                for i, msg in enumerate(self.messages):
+                    role = msg.get("role", "user")
+                    content = msg.get("content", "")
+                    
+                    if role == "system":
+                        content = f"{content}\n\n{tools_prompt}"
+                    elif role == "tool":
+                        # Skip tool messages - they're handled as user messages for text-based
+                        continue
+                    
+                    if role in ("system", "user", "assistant"):
+                        api_messages.append({"role": role, "content": str(content) if content else ""})
+                
+                resp = requests.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                    json={"model": self.model, "messages": api_messages, "stream": streaming},
+                    timeout=120, stream=streaming
+                )
+                resp.raise_for_status()
+                
+                if streaming:
+                    content = ""
+                    for line in resp.iter_lines():
+                        if not line:
+                            continue
+                        line = line.decode('utf-8')
+                        if line.startswith('data: '):
+                            line = line[6:]
+                        if line == '[DONE]':
+                            break
+                        try:
+                            data = json.loads(line)
+                            delta = data['choices'][0].get('delta', {})
+                            if 'content' in delta and delta['content']:
+                                chunk = delta['content']
+                                content += chunk
+                                if on_chunk:
+                                    on_chunk(chunk)
+                        except:
+                            pass
+                else:
+                    data = resp.json()
+                    content = data["choices"][0]["message"].get("content", "")
+                
+                # Estimate tokens for cost tracking
+                self.last_prompt_tokens = self.token_counter.count_messages(api_messages)
+                self.last_completion_tokens = self.token_counter.count(content)
+                
+                # Parse tool calls from response text
+                tool_calls = _parse_tool_calls_from_text(content)
+                
+                # Strip tool call blocks from content for display
+                display_content = _strip_tool_calls_from_text(content)
+                
+                return display_content, tool_calls
+                    
+            except requests.exceptions.HTTPError as e:
+                status = e.response.status_code if e.response else 0
+                if status in (401, 403, 429):
+                    TokenManager.rotate_token()
+                time.sleep(2 ** attempt)
+            except Exception as e:
+                print(f"[Error: {type(e).__name__}: {e}, attempt {attempt + 1}]")
+                time.sleep(2 ** attempt)
+        
+        return "[Error: All API attempts failed]", []
 
     def _call_openrouter_with_tools(self, tools: List[dict], streaming: bool = False, on_chunk=None) -> Tuple[str, List[dict]]:
         """Call OpenRouter API with native tool calling."""
