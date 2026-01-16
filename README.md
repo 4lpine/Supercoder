@@ -27,9 +27,10 @@ An autonomous AI coding agent that runs in your terminal. Give it a task, and it
 
 That's it. The installer handles everything:
 
-- ✅ Checks if Docker Desktop is installed (offers to install it if not)
+- ✅ Checks Python is installed
 - ✅ Downloads SuperCoder from GitHub
-- ✅ Builds the Docker image with all dependencies
+- ✅ Installs Python dependencies
+- ✅ Optionally sets up Docker for containerized mode
 - ✅ Creates the `supercoder` command
 - ✅ Adds it to your PATH
 
@@ -42,7 +43,34 @@ supercoder
 ### Requirements
 
 - **Windows 10/11**
-- **Docker Desktop** (the installer will help you get this if you don't have it)
+- **Python 3.8+** (required)
+- **Docker Desktop** (optional, for Docker mode)
+
+### Execution Modes
+
+SuperCoder supports two execution modes:
+
+| Mode | Command | Description |
+|------|---------|-------------|
+| **Native** (default) | `supercoder` | Runs directly on Windows with Python |
+| **Docker** | `supercoder-docker` | Runs in isolated Linux container |
+
+You can also toggle Docker mode from within SuperCoder:
+```
+docker on   # Enable Docker mode
+docker off  # Disable Docker mode (native)
+docker      # Show current mode
+```
+
+**When to use Docker mode:**
+- Running untrusted code in isolation
+- Need Linux-specific tools
+- Want consistent environment across machines
+
+**When to use Native mode:**
+- Running GUI applications (pygame, tkinter, etc.)
+- Faster startup time
+- No Docker installation required
 
 ### Updating
 
@@ -91,12 +119,20 @@ You describe what you want in plain English, and SuperCoder figures out how to b
 
 ### How It Works
 
-SuperCoder runs inside a **Docker container** with a full Linux environment. When you launch it from a Windows folder, that folder is mounted inside the container. This means:
+SuperCoder can run in two modes:
 
-1. SuperCoder can read and write files in your project
-2. It runs in an isolated environment (can't mess up your system)
-3. It has access to Linux tools (grep, sed, git, etc.)
-4. Your API tokens and settings persist between sessions
+**Native Mode (Default):**
+- Runs directly on Windows with Python
+- Full access to your system (can run GUI apps, access all drives)
+- Faster startup, no Docker required
+
+**Docker Mode:**
+- Runs inside a Linux container
+- Isolated environment (can't mess up your system)
+- Access to Linux tools (grep, sed, git, etc.)
+- Use `runOnHost` tool to run GUI apps on Windows
+
+When you launch SuperCoder, your current folder is accessible to the agent. Your API tokens and settings persist between sessions in `~/.supercoder/`.
 
 ---
 
@@ -134,6 +170,7 @@ C:\Projects\myapp> supercoder
 | `models` | List all available models |
 | `freemodels` | List free models (no API key needed) |
 | `tokens` | Add/manage API keys |
+| `docker` | Toggle Docker mode (on/off) |
 | `cd <path>` | Change directory |
 | `clear` | Clear conversation history |
 | `quit` | Exit SuperCoder |
@@ -232,6 +269,7 @@ SuperCoder has access to these tools:
 
 ### Shell & System
 - `executePwsh` - Run shell commands
+- `runOnHost` - Run commands on Windows host (Docker mode only, for GUI apps)
 - `controlPwshProcess` - Start/stop background processes
 - `systemInfo` - Get OS and environment info
 

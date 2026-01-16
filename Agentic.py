@@ -171,9 +171,9 @@ G4F_FREE_MODELS = {
 }
 
 # --- Native Tool Definitions ---
-NATIVE_TOOLS = [
-    {"type": "function", "function": {"name": "executePwsh", "description": "Execute a shell command inside Docker (Linux)", "parameters": {"type": "object", "properties": {"command": {"type": "string", "description": "Command to execute"}, "timeout": {"type": "integer", "description": "Timeout in seconds (default 60)"}}, "required": ["command"]}}},
-    {"type": "function", "function": {"name": "runOnHost", "description": "Execute a command on the Windows host machine (not in Docker). Use this for GUI apps, opening files with default programs, or Windows-specific commands.", "parameters": {"type": "object", "properties": {"command": {"type": "string", "description": "Windows command to execute on host"}, "timeout": {"type": "integer", "description": "Timeout in seconds (default 60)"}}, "required": ["command"]}}},
+# Base tools (always available)
+_BASE_TOOLS = [
+    {"type": "function", "function": {"name": "executePwsh", "description": "Execute a shell command", "parameters": {"type": "object", "properties": {"command": {"type": "string", "description": "Command to execute"}, "timeout": {"type": "integer", "description": "Timeout in seconds (default 60)"}}, "required": ["command"]}}},
     {"type": "function", "function": {"name": "controlPwshProcess", "description": "Start or stop background processes", "parameters": {"type": "object", "properties": {"action": {"type": "string", "enum": ["start", "stop"], "description": "Action to perform"}, "command": {"type": "string", "description": "Command to run (for start)"}, "processId": {"type": "integer", "description": "Process ID (for stop)"}, "path": {"type": "string", "description": "Working directory (for start)"}}, "required": ["action"]}}},
     {"type": "function", "function": {"name": "listProcesses", "description": "List running background processes", "parameters": {"type": "object", "properties": {}, "required": []}}},
     {"type": "function", "function": {"name": "getProcessOutput", "description": "Get output from a background process", "parameters": {"type": "object", "properties": {"processId": {"type": "integer", "description": "Process ID"}, "lines": {"type": "integer", "description": "Number of lines to return"}}, "required": ["processId"]}}},
@@ -206,6 +206,21 @@ NATIVE_TOOLS = [
     {"type": "function", "function": {"name": "interactWithUser", "description": "Interact with the user when task is complete, blocked, or needs clarification", "parameters": {"type": "object", "properties": {"message": {"type": "string", "description": "Message to show"}, "interactionType": {"type": "string", "enum": ["complete", "question", "error"], "description": "Type of interaction"}}, "required": ["message", "interactionType"]}}},
     {"type": "function", "function": {"name": "finish", "description": "Signal task completion", "parameters": {"type": "object", "properties": {"summary": {"type": "string", "description": "Summary of what was accomplished"}, "status": {"type": "string", "enum": ["complete", "blocked", "partial"], "description": "Task status"}}, "required": ["summary"]}}}
 ]
+
+# Docker-only tool (for running GUI apps on Windows host)
+_DOCKER_ONLY_TOOL = {"type": "function", "function": {"name": "runOnHost", "description": "Execute a command on the Windows host machine (not in Docker). Use this for GUI apps, opening files with default programs, or Windows-specific commands.", "parameters": {"type": "object", "properties": {"command": {"type": "string", "description": "Windows command to execute on host"}, "timeout": {"type": "integer", "description": "Timeout in seconds (default 60)"}}, "required": ["command"]}}}
+
+def get_native_tools() -> List[dict]:
+    """Get the list of native tools, including Docker-only tools if in Docker mode."""
+    from tools import is_inside_docker
+    tools = list(_BASE_TOOLS)
+    if is_inside_docker():
+        # Insert runOnHost after executePwsh
+        tools.insert(1, _DOCKER_ONLY_TOOL)
+    return tools
+
+# For backward compatibility
+NATIVE_TOOLS = _BASE_TOOLS  # Will be dynamically updated
 
 # Model context limits
 MODEL_LIMITS = {
@@ -575,7 +590,7 @@ class Agent:
 
     def PromptWithTools(self, user_input: str, tools: List[dict] = None, streaming: bool = False, on_chunk=None) -> Tuple[str, List[dict]]:
         if tools is None:
-            tools = NATIVE_TOOLS
+            tools = get_native_tools()
         
         context = self._build_context_string(user_input)
         current_messages = list(self.messages)

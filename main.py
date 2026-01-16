@@ -1000,6 +1000,8 @@ def cmd_help(state: State, agent: Agent, args: str) -> None:
 
 @cmd("status", "Show session status")
 def cmd_status(state: State, agent: Agent, args: str) -> None:
+    from tools import get_docker_mode_status
+    
     usage = agent.get_token_usage()
     print()
     print(_s("  Session Status:", C.BOLD))
@@ -1008,6 +1010,7 @@ def cmd_status(state: State, agent: Agent, args: str) -> None:
     print(f"  Auto mode: {_s('ON' if state.auto_mode else 'OFF', C.GREEN if state.auto_mode else C.RED)} (cap: {state.auto_cap})")
     print(f"  Output: {_s('VERBOSE' if state.verbose else ('COMPACT' if state.compact else 'NORMAL'), C.CYAN)}")
     print(f"  Verify: {state.verify_mode}")
+    print(f"  Mode: {_s(get_docker_mode_status(), C.CYAN)}")
     
     # Show cost for paid models
     if not agent.use_g4f and not is_free_model(agent.model):
@@ -1369,6 +1372,43 @@ def cmd_tokens(state: State, agent: Agent, args: str) -> None:
     TokenManager.load_tokens()
     status(f"Saved {len(new_tokens)} token(s) globally", "success")
 
+@cmd("docker", "Toggle Docker mode (docker on|off)")
+def cmd_docker(state: State, agent: Agent, args: str) -> None:
+    from tools import is_docker_mode, is_inside_docker, set_docker_mode, get_docker_mode_status
+    
+    arg = args.strip().lower()
+    
+    if is_inside_docker():
+        status("Already running inside Docker container", "info")
+        return
+    
+    if not arg or arg == "status":
+        status(f"Docker mode: {get_docker_mode_status()}", "info")
+        return
+    
+    if arg == "on":
+        # Check if Docker is available
+        try:
+            result = subprocess.run(["docker", "info"], capture_output=True, timeout=10)
+            if result.returncode != 0:
+                status("Docker is not running. Please start Docker Desktop.", "error")
+                return
+        except FileNotFoundError:
+            status("Docker is not installed.", "error")
+            return
+        except Exception as e:
+            status(f"Could not check Docker: {e}", "error")
+            return
+        
+        set_docker_mode(True)
+        status("Docker mode enabled. Commands will run in Docker container.", "success")
+        status("Note: runOnHost tool is now available for GUI apps.", "info")
+    elif arg == "off":
+        set_docker_mode(False)
+        status("Docker mode disabled. Running natively.", "success")
+    else:
+        status("Usage: docker [on|off|status]", "warning")
+
 @cmd("quit", "Exit supercoder", shortcuts=["exit", "q"])
 def cmd_quit(state: State, agent: Agent, args: str) -> None:
     # Save command history
@@ -1640,8 +1680,11 @@ def run(agent: Agent, state: State) -> None:
                     break
                 state.auto_steps += 1
                 
-                # Use simple streaming - just print chunks directly
+                # Use simple streaming - just print chunks directly, but filter out tool signals
                 def on_chunk(chunk: str):
+                    # Filter out internal tool call progress signals
+                    if chunk.startswith('\x00TOOL:'):
+                        return
                     print(chunk, end='', flush=True)
                 content, tool_calls = agent.PromptWithTools(full_prompt, streaming=True, on_chunk=on_chunk)
                 
@@ -1649,16 +1692,18 @@ def run(agent: Agent, state: State) -> None:
                 if content:
                     print()
                 
-                # Track cost for paid models
-                if not agent.use_g4f and not is_free_model(agent.model):
-                    query_cost = _cost_tracker.add_query(
-                        agent.model, 
-                        agent.last_prompt_tokens, 
-                        agent.last_completion_tokens
-                    )
-                    if query_cost > 0:
-                        tokens_used = agent.last_prompt_tokens + agent.last_completion_tokens
+                # Show token usage for all models
+                tokens_used = agent.last_prompt_tokens + agent.last_completion_tokens
+                if tokens_used > 0:
+                    if not agent.use_g4f and not is_free_model(agent.model):
+                        query_cost = _cost_tracker.add_query(
+                            agent.model, 
+                            agent.last_prompt_tokens, 
+                            agent.last_completion_tokens
+                        )
                         print(f"  {C.DIM}[{tokens_used:,} tokens, {_cost_tracker.format_cost(query_cost)}]{C.RST}")
+                    else:
+                        print(f"  {C.DIM}[{tokens_used:,} tokens]{C.RST}")
                 
                 sys.stdout.flush()
                 

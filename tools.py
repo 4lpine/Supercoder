@@ -10,6 +10,39 @@ from typing import Any, Dict, List, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
 
+# --- Docker Mode ---
+# Docker mode is enabled when:
+# 1. Running inside Docker container (HOST_CMD_DIR env var set), OR
+# 2. User explicitly enabled it with 'docker on' command
+_docker_mode_override: Optional[bool] = None
+
+def is_docker_mode() -> bool:
+    """Check if running in Docker mode (either inside container or user-enabled)."""
+    global _docker_mode_override
+    # If user explicitly set it, use that
+    if _docker_mode_override is not None:
+        return _docker_mode_override
+    # Otherwise, detect if we're inside Docker container
+    return os.environ.get("HOST_CMD_DIR") is not None
+
+def is_inside_docker() -> bool:
+    """Check if actually running inside Docker container."""
+    return os.environ.get("HOST_CMD_DIR") is not None
+
+def set_docker_mode(enabled: bool) -> None:
+    """Set Docker mode override."""
+    global _docker_mode_override
+    _docker_mode_override = enabled
+
+def get_docker_mode_status() -> str:
+    """Get human-readable Docker mode status."""
+    if is_inside_docker():
+        return "Docker (container)"
+    elif _docker_mode_override:
+        return "Docker (enabled)"
+    else:
+        return "Native"
+
 # --- Undo System ---
 @dataclass
 class FileSnapshot:
