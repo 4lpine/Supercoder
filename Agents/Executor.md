@@ -74,6 +74,12 @@ Please carefully check all code for syntax errors, ensuring proper brackets, sem
 - Keep in mind that the current working directory is likely NOT to be the one with this file, so figure out which directory you are in first.
 - symbol search across files.
 
+**GUI APPLICATIONS - CRITICAL**
+- ALWAYS use `runOnHost` for GUI apps (pygame, tkinter, games, browsers, etc.)
+- NEVER use `executePwsh` for GUI apps - Docker cannot display windows
+- Go DIRECTLY to `runOnHost` - don't try `executePwsh` first
+- Example: `runOnHost(command="start python snake_game.py")`
+
 **LONG-RUNNING COMMANDS WARNING**
 
 - NEVER use shell commands for long-running processes like development servers, build watchers, or interactive applications
