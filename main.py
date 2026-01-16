@@ -1054,16 +1054,44 @@ def run(agent: Agent, state: State) -> None:
                     status(f"Auto cap reached ({state.auto_cap} steps)", "warning")
                     break
                 state.auto_steps += 1
+                
+                # Live token counter during streaming
+                _stream_chars = [0]
+                _has_content = [False]
+                _spinner = ['|', '/', '-', '\\']
+                _spin_idx = [0]
+                
                 def on_chunk(chunk: str):
-                    print(chunk, end='', flush=True)
+                    _stream_chars[0] += len(chunk)
+                    est_tokens = _stream_chars[0] // 4
+                    _spin_idx[0] = (_spin_idx[0] + 1) % 4
+                    
+                    if chunk.strip():
+                        # Has visible content - print it
+                        if not _has_content[0]:
+                            # First content - clear the spinner line
+                            sys.stdout.write('\r' + ' ' * 40 + '\r')
+                            _has_content[0] = True
+                        print(chunk, end='', flush=True)
+                    else:
+                        # No visible content yet - show spinner with token count
+                        if not _has_content[0]:
+                            spinner = _spinner[_spin_idx[0]]
+                            sys.stdout.write(f'\r  {C.DIM}{spinner} {est_tokens:,} tokens...{C.RST}')
+                            sys.stdout.flush()
+                
                 content, tool_calls = agent.PromptWithTools(full_prompt, streaming=True, on_chunk=on_chunk)
                 had_content = bool(content)
-                if content:
-                    print()
                 
-                # Show token usage after each query
-                usage = agent.get_token_usage()
-                print(f"  {C.DIM}[{usage['used']:,} tokens, {usage['percent']}%]{C.RST}")
+                # Clear spinner if no content was printed
+                if not _has_content[0]:
+                    sys.stdout.write('\r' + ' ' * 40 + '\r')
+                
+                # Show final token count
+                est_tokens = _stream_chars[0] // 4
+                if had_content:
+                    print()
+                print(f"  {C.DIM}[{est_tokens:,} tokens]{C.RST}")
                 
                 # Track tools used this turn
                 tools_used_this_turn = []
