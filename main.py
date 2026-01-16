@@ -68,7 +68,7 @@ if READLINE_AVAILABLE and not PROMPT_TOOLKIT_AVAILABLE:
     readline.parse_and_bind(r'"\C-n": next-history')            # Ctrl+N - next
 
 import tools
-from Agentic import Agent, execute_tool, MODEL_LIMITS, TokenManager, G4F_FREE_MODELS, G4F_AVAILABLE
+from Agentic import Agent, execute_tool, MODEL_LIMITS, TokenManager, G4F_FREE_MODELS, G4F_AVAILABLE, TEXT_TOOL_MODELS
 
 # Syntax highlighting
 try:
@@ -543,7 +543,7 @@ def _highlight_by_language(code: str, language: str) -> str:
 class StreamingHighlighter:
     """Handles streaming output - shows spinner during tool calls, prettifies code blocks."""
     
-    def __init__(self):
+    def __init__(self, suppress_pre_tool_text: bool = False):
         self.buffer = ""
         self.in_code_block = False
         self.in_tool_call = False  # Track if we're inside a tool_call block
@@ -558,6 +558,8 @@ class StreamingHighlighter:
         self.spinner_chars = "|/-\\"
         self.spinner_idx = 0
         self.last_spinner_update = 0
+        self.suppress_pre_tool_text = suppress_pre_tool_text  # Don't print text before tool calls
+        self.seen_tool_call = False  # Track if we've seen any tool call this response
     
     def _clear_lines(self, n: int) -> None:
         """Clear n lines above cursor (for rewriting code blocks)."""
@@ -618,9 +620,10 @@ class StreamingHighlighter:
             if tool_start >= 0 and 'tool' in self.buffer[tool_start:]:
                 # Found start of tool call
                 self.in_tool_call = True
+                self.seen_tool_call = True
                 self.tool_call_chars = len(self.buffer) - tool_start
-                # Print anything before the tool_call block
-                if tool_start > 0:
+                # Print anything before the tool_call block (unless suppressed)
+                if tool_start > 0 and not self.suppress_pre_tool_text:
                     before = self.buffer[:tool_start]
                     if before.strip():
                         print(before, end='', flush=True)
@@ -1638,7 +1641,9 @@ def run(agent: Agent, state: State) -> None:
                 state.auto_steps += 1
                 
                 # Use streaming highlighter for syntax-highlighted output
-                highlighter = StreamingHighlighter()
+                # Suppress pre-tool-call text for text-tool models (they tend to "think out loud")
+                suppress_thinking = agent.model in TEXT_TOOL_MODELS or agent.use_g4f
+                highlighter = StreamingHighlighter(suppress_pre_tool_text=suppress_thinking)
                 def on_chunk(chunk: str):
                     highlighter.process_chunk(chunk)
                 content, tool_calls = agent.PromptWithTools(full_prompt, streaming=True, on_chunk=on_chunk)
