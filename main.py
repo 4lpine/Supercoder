@@ -1,4 +1,4 @@
-﻿
+
 from __future__ import annotations
 
 import os
@@ -177,7 +177,7 @@ class C:
 def _s(text: str, color: str) -> str:
     return f"{color}{text}{C.RST}"
 
-_STATUS = {"info": (C.PURPLE, "[i]"), "success": (C.BRED, "[âœ“]"), "warning": (C.BYELLOW, "[!]"), "error": (C.RED, "[x]"), "context": (C.BPURPLE, "[~]")}
+_STATUS = {"info": (C.PURPLE, "[i]"), "success": (C.BRED, "[✓]"), "warning": (C.BYELLOW, "[!]"), "error": (C.RED, "[x]"), "context": (C.BPURPLE, "[~]")}
 
 def status(msg: str, level: str = "info") -> None:
     c, p = _STATUS.get(level, (C.BLUE, "[i]"))
@@ -189,23 +189,23 @@ def header() -> None:
     Color1 = Fore.MAGENTA
     Color2 = Fore.RED
     Banner = f"""
-    {Color2}  â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆ  â–ˆ    â–ˆâ–ˆ  â–ˆâ–ˆâ–“â–ˆâ–ˆâ–ˆ  â–“â–ˆâ–ˆâ–ˆâ–ˆâ–ˆ  â–ˆâ–ˆâ–€â–ˆâ–ˆâ–ˆ   â–„â–ˆâ–ˆâ–ˆâ–ˆâ–„   {Color1}â–’{Color2}â–ˆâ–ˆâ–ˆâ–ˆâ–ˆ  â–“â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–„ â–“â–ˆâ–ˆâ–ˆâ–ˆâ–ˆ  â–ˆâ–ˆâ–€â–ˆâ–ˆâ–ˆ  
-    {Color1}â–’{Color2}â–ˆâ–ˆ    {Color1}â–’  {Color2}â–ˆâ–ˆ  â–“â–ˆâ–ˆ{Color1}â–’{Color2}â–“â–ˆâ–ˆ{Color1}â–‘  {Color2}â–ˆâ–ˆ{Color1}â–’{Color2}â–“â–ˆ   â–€ â–“â–ˆâ–ˆ {Color1}â–’ {Color2}â–ˆâ–ˆ{Color1}â–’â–’{Color2}â–ˆâ–ˆâ–€ â–€â–ˆ  {Color1}â–’{Color2}â–ˆâ–ˆ{Color1}â–’  {Color2}â–ˆâ–ˆ{Color1}â–’â–’{Color2}â–ˆâ–ˆâ–€ â–ˆâ–ˆâ–Œâ–“â–ˆ   â–€ â–“â–ˆâ–ˆ {Color1}â–’ {Color2}â–ˆâ–ˆ{Color1}â–’
-    {Color1}â–‘ {Color2}â–“â–ˆâ–ˆâ–„   â–“â–ˆâ–ˆ  {Color1}â–’{Color2}â–ˆâ–ˆ{Color1}â–‘{Color2}â–“â–ˆâ–ˆ{Color1}â–‘ {Color2}â–ˆâ–ˆâ–“{Color1}â–’â–’{Color2}â–ˆâ–ˆâ–ˆ   â–“â–ˆâ–ˆ {Color1}â–‘{Color2}â–„â–ˆ {Color1}â–’â–’{Color2}â–“â–ˆ    â–„ {Color1}â–’{Color2}â–ˆâ–ˆ{Color1}â–‘  {Color2}â–ˆâ–ˆ{Color1}â–’â–‘{Color2}â–ˆâ–ˆ   {Color2}â–ˆâ–Œ{Color1}â–’{Color2}â–ˆâ–ˆâ–ˆ   â–“â–ˆâ–ˆ {Color1}â–‘{Color2}â–„â–ˆ {Color1}â–’
-    {Color1}  â–’   {Color2}â–ˆâ–ˆ{Color1}â–’{Color2}â–“â–“â–ˆ  {Color1}â–‘{Color2}â–ˆâ–ˆ{Color1}â–‘â–’{Color2}â–ˆâ–ˆâ–„â–ˆâ–“{Color1}â–’ â–’â–’{Color2}â–“â–ˆ  â–„ {Color1}â–’{Color2}â–ˆâ–ˆâ–€â–€â–ˆâ–„  {Color1}â–’{Color2}â–“â–“â–„ â–„â–ˆâ–ˆ{Color1}â–’â–’{Color2}â–ˆâ–ˆ   â–ˆâ–ˆ{Color1}â–‘â–‘{Color2}â–“â–ˆâ–„   â–Œ{Color1}â–’{Color2}â–“â–ˆ  â–„ {Color1}â–’{Color2}â–ˆâ–ˆâ–€â–€â–ˆâ–„  
-    {Color1}â–’{Color2}â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆ{Color1}â–’â–’â–’â–’{Color2}â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–“{Color1} â–’{Color2}â–ˆâ–ˆ{Color1}â–’ â–‘  â–‘â–‘â–’{Color2}â–ˆâ–ˆâ–ˆâ–ˆ{Color1}â–’â–‘{Color2}â–ˆâ–ˆâ–“{Color1} â–’{Color2}â–ˆâ–ˆ{Color1}â–’â–’ {Color2}â–“â–ˆâ–ˆâ–ˆâ–€{Color1} â–‘â–‘ {Color2}â–ˆâ–ˆâ–ˆâ–ˆâ–“{Color1}â–’â–‘â–‘â–’{Color2}â–ˆâ–ˆâ–ˆâ–ˆâ–“{Color1} â–‘â–’{Color2}â–ˆâ–ˆâ–ˆâ–ˆ{Color1}â–’â–‘{Color2}â–ˆâ–ˆâ–“{Color1} â–’{Color2}â–ˆâ–ˆ{Color1}â–’
-    {Color1}â–’ â–’{Color2}â–“{Color1}â–’ â–’ â–‘â–‘â–’{Color2}â–“{Color1}â–’ â–’ â–’ â–’{Color2}â–“{Color1}â–’â–‘ â–‘  â–‘â–‘â–‘ â–’â–‘ â–‘â–‘ â–’{Color2}â–“ {Color1}â–‘â–’{Color2}â–“{Color1}â–‘â–‘ â–‘â–’ â–’  â–‘â–‘ â–’â–‘â–’â–‘â–’â–‘  â–’â–’{Color2}â–“{Color1}  â–’ â–‘â–‘ â–’â–‘ â–‘â–‘ â–’{Color2}â–“ {Color1}â–‘â–’{Color2}â–“{Color1}â–‘
-    {Color1}â–‘ â–‘â–’  â–‘ â–‘â–‘â–‘â–’â–‘ â–‘ â–‘ â–‘â–’ â–‘      â–‘ â–‘  â–‘  â–‘â–’ â–‘ â–’â–‘  â–‘  â–’     â–‘ â–’ â–’â–‘  â–‘ â–’  â–’  â–‘ â–‘  â–‘  â–‘â–’ â–‘ â–’â–‘
-    {Color1}â–‘  â–‘  â–‘   â–‘â–‘â–‘ â–‘ â–‘ â–‘â–‘          â–‘     â–‘â–‘   â–‘ â–‘        â–‘ â–‘ â–‘ â–’   â–‘ â–‘  â–‘    â–‘     â–‘â–‘   â–‘
-    {Color1}      â–‘     â–‘                 â–‘  â–‘   â–‘     â–‘ â–‘          â–‘ â–‘     â–‘       â–‘  â–‘   â–‘
-    {Color1}                                           â–‘                  â–‘                      
+    {Color2}  ██████  █    ██  ██▓███  ▓█████  ██▀███   ▄████▄   {Color1}▒{Color2}█████  ▓█████▄ ▓█████  ██▀███  
+    {Color1}▒{Color2}██    {Color1}▒  {Color2}██  ▓██{Color1}▒{Color2}▓██{Color1}░  {Color2}██{Color1}▒{Color2}▓█   ▀ ▓██ {Color1}▒ {Color2}██{Color1}▒▒{Color2}██▀ ▀█  {Color1}▒{Color2}██{Color1}▒  {Color2}██{Color1}▒▒{Color2}██▀ ██▌▓█   ▀ ▓██ {Color1}▒ {Color2}██{Color1}▒
+    {Color1}░ {Color2}▓██▄   ▓██  {Color1}▒{Color2}██{Color1}░{Color2}▓██{Color1}░ {Color2}██▓{Color1}▒▒{Color2}███   ▓██ {Color1}░{Color2}▄█ {Color1}▒▒{Color2}▓█    ▄ {Color1}▒{Color2}██{Color1}░  {Color2}██{Color1}▒░{Color2}██   {Color2}█▌{Color1}▒{Color2}███   ▓██ {Color1}░{Color2}▄█ {Color1}▒
+    {Color1}  ▒   {Color2}██{Color1}▒{Color2}▓▓█  {Color1}░{Color2}██{Color1}░▒{Color2}██▄█▓{Color1}▒ ▒▒{Color2}▓█  ▄ {Color1}▒{Color2}██▀▀█▄  {Color1}▒{Color2}▓▓▄ ▄██{Color1}▒▒{Color2}██   ██{Color1}░░{Color2}▓█▄   ▌{Color1}▒{Color2}▓█  ▄ {Color1}▒{Color2}██▀▀█▄  
+    {Color1}▒{Color2}██████{Color1}▒▒▒▒{Color2}█████▓{Color1} ▒{Color2}██{Color1}▒ ░  ░░▒{Color2}████{Color1}▒░{Color2}██▓{Color1} ▒{Color2}██{Color1}▒▒ {Color2}▓███▀{Color1} ░░ {Color2}████▓{Color1}▒░░▒{Color2}████▓{Color1} ░▒{Color2}████{Color1}▒░{Color2}██▓{Color1} ▒{Color2}██{Color1}▒
+    {Color1}▒ ▒{Color2}▓{Color1}▒ ▒ ░░▒{Color2}▓{Color1}▒ ▒ ▒ ▒{Color2}▓{Color1}▒░ ░  ░░░ ▒░ ░░ ▒{Color2}▓ {Color1}░▒{Color2}▓{Color1}░░ ░▒ ▒  ░░ ▒░▒░▒░  ▒▒{Color2}▓{Color1}  ▒ ░░ ▒░ ░░ ▒{Color2}▓ {Color1}░▒{Color2}▓{Color1}░
+    {Color1}░ ░▒  ░ ░░░▒░ ░ ░ ░▒ ░      ░ ░  ░  ░▒ ░ ▒░  ░  ▒     ░ ▒ ▒░  ░ ▒  ▒  ░ ░  ░  ░▒ ░ ▒░
+    {Color1}░  ░  ░   ░░░ ░ ░ ░░          ░     ░░   ░ ░        ░ ░ ░ ▒   ░ ░  ░    ░     ░░   ░
+    {Color1}      ░     ░                 ░  ░   ░     ░ ░          ░ ░     ░       ░  ░   ░
+    {Color1}                                           ░                  ░                      
     {Fore.RESET}
     """
     print(Banner)
     print()
 
 def divider() -> None:
-    print(f"  {C.PURPLE}{'â”€' * 57}{C.RST}")
+    print(f"  {C.PURPLE}{'─' * 57}{C.RST}")
     print()
 
 
@@ -222,8 +222,8 @@ def _build_prompt() -> str:
         cwd = Path(host_pwd).name or host_pwd
     else:
         cwd = Path.cwd().name or "~"
-    line1 = f"{C.BPURPLE}â”Œâ”€â”€({C.BRED}{user}{C.BPURPLE}@{C.BRED}supercoder{C.BPURPLE})-[{C.BOLD}{C.WHITE}{cwd}{C.RST}{C.BPURPLE}]{C.RST}"
-    line2 = f"{C.BPURPLE}â””â”€{C.BRED}${C.RST} "
+    line1 = f"{C.BPURPLE}┌──({C.BRED}{user}{C.BPURPLE}@{C.BRED}supercoder{C.BPURPLE})-[{C.BOLD}{C.WHITE}{cwd}{C.RST}{C.BPURPLE}]{C.RST}"
+    line2 = f"{C.BPURPLE}└─{C.BRED}${C.RST} "
     return f"{line1}\n{line2}"
 
 # Global history for prompt_toolkit
@@ -277,14 +277,14 @@ def get_input(prompt: str = None) -> str:
         stripped = line.strip()
         if stripped == "<<<" or stripped.startswith('"""'):
             end = ">>>" if stripped == "<<<" else '"""'
-            print(f"  {C.GRAY}â•­â”€ multiline mode (end with {end}){C.RST}")
+            print(f"  {C.GRAY}╭─ multiline mode (end with {end}){C.RST}")
             lines = [stripped[3:]] if stripped.startswith('"""') and len(stripped) > 3 else []
             while True:
-                ln = input(f"  {C.BPURPLE}â”‚{C.RST} ")
+                ln = input(f"  {C.BPURPLE}│{C.RST} ")
                 if ln.strip() == end or (end == '"""' and ln.strip().endswith('"""')):
                     if end == '"""' and ln.strip().endswith('"""') and len(ln.strip()) > 3:
                         lines.append(ln.strip()[:-3])
-                    print(f"  {C.GRAY}â•°â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€{C.RST}")
+                    print(f"  {C.GRAY}╰─────────────────────────────{C.RST}")
                     break
                 lines.append(ln)
             return "\n".join(lines)
@@ -541,81 +541,139 @@ def _highlight_by_language(code: str, language: str) -> str:
         return code
 
 class StreamingHighlighter:
-    """Handles streaming output with thinking animation for tool calls."""
+    """Handles streaming output - shows raw text immediately, then prettifies code blocks."""
     
     def __init__(self):
+        self.buffer = ""
+        self.in_code_block = False
+        self.code_language = ""
+        self.code_buffer = ""
+        self.code_start_line = 0  # Track where code block started for rewriting
+        self.lines_printed = 0
         self.total_chars = 0
-        self.thinking_chars = 0
+        self.last_visible_time = time.time()
+        self.spinner_shown = False
         self.spinner_chars = "|/-\\"
         self.spinner_idx = 0
-        self.in_tool_call = False
-        self.last_update = time.time()
     
-    def _show_thinking(self) -> None:
-        """Show thinking animation with token count."""
-        try:
-            self.spinner_idx = (self.spinner_idx + 1) % len(self.spinner_chars)
-            spinner = self.spinner_chars[self.spinner_idx]
-            tokens = self.thinking_chars // 4
-            sys.stdout.write(f'\r{C.CYAN}{spinner}{C.RST} {C.DIM}Thinking... {tokens} tokens{C.RST}    ')
-            sys.stdout.flush()
-        except:
-            pass
+    def _clear_lines(self, n: int) -> None:
+        """Clear n lines above cursor (for rewriting code blocks)."""
+        if n <= 0:
+            return
+        # Move up n lines and clear each
+        for _ in range(n):
+            sys.stdout.write('\033[A')  # Move up
+            sys.stdout.write('\033[2K')  # Clear line
+        sys.stdout.write('\r')  # Return to start of line
+        sys.stdout.flush()
     
-    def _clear_line(self) -> None:
-        """Clear current line."""
-        try:
-            sys.stdout.write('\r\033[2K')
+    def _clear_spinner(self) -> None:
+        """Clear the spinner line if shown."""
+        if self.spinner_shown:
+            sys.stdout.write('\r\033[2K')  # Clear current line
             sys.stdout.flush()
-        except:
-            pass
+            self.spinner_shown = False
+    
+    def _show_spinner(self) -> None:
+        """Show/update the token counter spinner."""
+        self.spinner_idx = (self.spinner_idx + 1) % len(self.spinner_chars)
+        spinner = self.spinner_chars[self.spinner_idx]
+        # Estimate tokens (~4 chars per token)
+        tokens = self.total_chars // 4
+        sys.stdout.write(f'\r{C.DIM}{spinner} Generating... {tokens} tokens{C.RST}')
+        sys.stdout.flush()
+        self.spinner_shown = True
     
     def process_chunk(self, chunk: str) -> None:
-        """Process a streaming chunk."""
-        try:
-            self.total_chars += len(chunk)
+        """Process a streaming chunk - print raw immediately."""
+        self.total_chars += len(chunk)
+        
+        # Check if chunk has visible content (not just tool call JSON)
+        visible = chunk.strip() and not chunk.strip().startswith('{"tool"') and not chunk.strip().startswith('```tool_call')
+        
+        if visible:
+            self._clear_spinner()
+            # Always print raw chunk immediately for responsiveness
+            print(chunk, end='', flush=True)
+            self.last_visible_time = time.time()
             
-            # Check if this looks like a tool call
-            if '```tool_call' in chunk or (self.in_tool_call and '```' not in chunk):
-                if '```tool_call' in chunk:
-                    self.in_tool_call = True
-                    self.thinking_chars = 0
-                
-                self.thinking_chars += len(chunk)
-                
-                # Update spinner periodically
-                now = time.time()
-                if now - self.last_update > 0.08:
-                    self._show_thinking()
-                    self.last_update = now
-                
-                # Check if tool call ended (closing ```)
-                if self.in_tool_call and chunk.strip() == '```':
-                    self._clear_line()
-                    self.in_tool_call = False
+            # Track for potential prettification
+            self.buffer += chunk
+            
+            # Count newlines for line tracking
+            self.lines_printed += chunk.count('\n')
+            
+            # Check if we just completed a code block
+            if not self.in_code_block:
+                # Look for start of code block
+                match = re.search(r'```(\w*)\n', self.buffer)
+                if match:
+                    self.in_code_block = True
+                    self.code_language = match.group(1) or "text"
+                    self.code_start_line = self.lines_printed - self.buffer[match.end():].count('\n') - 1
+                    self.code_buffer = self.buffer[match.end():]
+                    self.buffer = ""
             else:
-                # Regular content - just print it
-                if self.in_tool_call:
-                    # End of tool call
-                    self._clear_line()
-                    self.in_tool_call = False
-                print(chunk, end='', flush=True)
-        except Exception as e:
-            # Fallback - just print
-            try:
-                print(chunk, end='', flush=True)
-            except:
-                pass
+                # Inside code block, accumulate
+                self.code_buffer += chunk
+                
+                # Check for end of code block
+                if '```' in self.code_buffer:
+                    end_match = re.search(r'```', self.code_buffer)
+                    if end_match:
+                        code_content = self.code_buffer[:end_match.start()].rstrip('\n')
+                        
+                        # Calculate how many lines to clear (code + opening ``` + closing ```)
+                        code_lines = code_content.count('\n') + 1
+                        lines_to_clear = code_lines + 2  # +2 for ``` markers
+                        
+                        # Clear the raw code block
+                        self._clear_lines(lines_to_clear)
+                        
+                        # Print prettified version
+                        print(f"{C.DIM}```{self.code_language}{C.RST}")
+                        if PYGMENTS_AVAILABLE and code_content.strip():
+                            highlighted = _highlight_by_language(code_content, self.code_language)
+                            print(highlighted)
+                        else:
+                            print(code_content)
+                        print(f"{C.DIM}```{C.RST}", flush=True)
+                        
+                        # Reset state
+                        self.in_code_block = False
+                        self.code_language = ""
+                        self.code_buffer = ""
+                        self.buffer = self.code_buffer[end_match.end():]
+                        self.lines_printed = 0
+        else:
+            # No visible output - show spinner with token count
+            self._show_spinner()
     
     def flush(self) -> None:
-        """Flush remaining content."""
-        try:
-            self._clear_line()
-            if not self.in_tool_call:
-                print()  # Final newline
-        except:
-            pass
-        self.in_tool_call = False
+        """Flush any remaining content."""
+        self._clear_spinner()
+        
+        # If we're in an unclosed code block, prettify what we have
+        if self.in_code_block and self.code_buffer.strip():
+            code_content = self.code_buffer.rstrip('\n')
+            code_lines = code_content.count('\n') + 1
+            lines_to_clear = code_lines + 1  # +1 for opening ```
+            
+            self._clear_lines(lines_to_clear)
+            
+            print(f"{C.DIM}```{self.code_language}{C.RST}")
+            if PYGMENTS_AVAILABLE:
+                highlighted = _highlight_by_language(code_content, self.code_language)
+                print(highlighted)
+            else:
+                print(code_content)
+            print(f"{C.DIM}```{C.RST}", flush=True)
+        
+        self.buffer = ""
+        self.code_buffer = ""
+        self.in_code_block = False
+        self.lines_printed = 0
+
 def _print_highlighted_lines(content: str, filename: str, prefix: str = "", line_nums: bool = True, color_override: str = None) -> None:
     """Print content with syntax highlighting and optional line numbers."""
     if PYGMENTS_AVAILABLE and filename:
@@ -628,60 +686,60 @@ def _print_highlighted_lines(content: str, filename: str, prefix: str = "", line
         if color_override:
             line = f"{color_override}{line}{C.RST}"
         if line_nums:
-            print(f"  {C.PURPLE}â”‚{C.RST} {prefix}{C.DIM}{i:4}{C.RST} {line}")
+            print(f"  {C.PURPLE}│{C.RST} {prefix}{C.DIM}{i:4}{C.RST} {line}")
         else:
-            print(f"  {C.PURPLE}â”‚{C.RST} {prefix}{line}")
+            print(f"  {C.PURPLE}│{C.RST} {prefix}{line}")
 
 def print_tool(name: str, args: Dict[str, Any], result: str, compact: bool = True, verbose: bool = False) -> None:
     arg_str = ", ".join(f"{k}={repr(v)[:60]}" for k, v in args.items())
-    print(f"\n  {C.BPURPLE}â–¸{C.RST} {C.BRED}{name}{C.RST}{C.GRAY}({arg_str[:100]}){C.RST}")
+    print(f"\n  {C.BPURPLE}▸{C.RST} {C.BRED}{name}{C.RST}{C.GRAY}({arg_str[:100]}){C.RST}")
     
     # Convert result to string if needed
     result = _to_str(result)
     
     if verbose:
         # Full verbose output with nice formatting (rounded corners)
-        print(f"  {C.PURPLE}â•­{'â”€' * 70}{C.RST}")
+        print(f"  {C.PURPLE}╭{'─' * 70}{C.RST}")
         
         # Show full arguments for write operations
         if name in ("fsWrite", "fsAppend"):
             content = _to_str(args.get("text", args.get("content", "")), join_lists=True)
             path = args.get("path", "")
-            print(f"  {C.PURPLE}â”‚{C.RST} {C.BYELLOW}FILE:{C.RST} {path}")
-            print(f"  {C.PURPLE}â”‚{C.RST} {C.BYELLOW}CONTENT ({len(content)} chars):{C.RST}")
-            print(f"  {C.PURPLE}â”œ{'â”€' * 70}{C.RST}")
+            print(f"  {C.PURPLE}│{C.RST} {C.BYELLOW}FILE:{C.RST} {path}")
+            print(f"  {C.PURPLE}│{C.RST} {C.BYELLOW}CONTENT ({len(content)} chars):{C.RST}")
+            print(f"  {C.PURPLE}├{'─' * 70}{C.RST}")
             _print_highlighted_lines(content, path)
-            print(f"  {C.PURPLE}â”œ{'â”€' * 70}{C.RST}")
+            print(f"  {C.PURPLE}├{'─' * 70}{C.RST}")
         
         elif name == "strReplace":
             path = args.get("path", "")
             old = _to_str(args.get("oldStr", ""), join_lists=True)
             new = _to_str(args.get("newStr", ""), join_lists=True)
-            print(f"  {C.PURPLE}â”‚{C.RST} {C.BYELLOW}FILE:{C.RST} {path}")
-            print(f"  {C.PURPLE}â”‚{C.RST} {C.RED}OLD ({len(old)} chars):{C.RST}")
-            print(f"  {C.PURPLE}â”œ{'â”€' * 70}{C.RST}")
+            print(f"  {C.PURPLE}│{C.RST} {C.BYELLOW}FILE:{C.RST} {path}")
+            print(f"  {C.PURPLE}│{C.RST} {C.RED}OLD ({len(old)} chars):{C.RST}")
+            print(f"  {C.PURPLE}├{'─' * 70}{C.RST}")
             _print_highlighted_lines(old, path, prefix=f"{C.RED}-{C.RST} ", line_nums=False)
-            print(f"  {C.PURPLE}â”œ{'â”€' * 70}{C.RST}")
-            print(f"  {C.PURPLE}â”‚{C.RST} {C.GREEN}NEW ({len(new)} chars):{C.RST}")
-            print(f"  {C.PURPLE}â”œ{'â”€' * 70}{C.RST}")
+            print(f"  {C.PURPLE}├{'─' * 70}{C.RST}")
+            print(f"  {C.PURPLE}│{C.RST} {C.GREEN}NEW ({len(new)} chars):{C.RST}")
+            print(f"  {C.PURPLE}├{'─' * 70}{C.RST}")
             _print_highlighted_lines(new, path, prefix=f"{C.GREEN}+{C.RST} ", line_nums=False)
-            print(f"  {C.PURPLE}â”œ{'â”€' * 70}{C.RST}")
+            print(f"  {C.PURPLE}├{'─' * 70}{C.RST}")
         
         elif name in ("readFile", "readCode", "readMultipleFiles"):
             path = args.get("path", args.get("paths", [""])[0] if args.get("paths") else "")
-            print(f"  {C.PURPLE}â”‚{C.RST} {C.BYELLOW}CONTENT:{C.RST}")
-            print(f"  {C.PURPLE}â”œ{'â”€' * 70}{C.RST}")
+            print(f"  {C.PURPLE}│{C.RST} {C.BYELLOW}CONTENT:{C.RST}")
+            print(f"  {C.PURPLE}├{'─' * 70}{C.RST}")
             _print_highlighted_lines(result, path)
-            print(f"  {C.PURPLE}â”œ{'â”€' * 70}{C.RST}")
+            print(f"  {C.PURPLE}├{'─' * 70}{C.RST}")
         
         else:
             # Generic verbose output
             if result:
-                print(f"  {C.PURPLE}â”‚{C.RST} {C.BYELLOW}RESULT:{C.RST}")
+                print(f"  {C.PURPLE}│{C.RST} {C.BYELLOW}RESULT:{C.RST}")
                 for line in result.split('\n'):
-                    print(f"  {C.PURPLE}â”‚{C.RST} {line}")
+                    print(f"  {C.PURPLE}│{C.RST} {line}")
         
-        print(f"  {C.PURPLE}â•°{'â”€' * 70}{C.RST}")
+        print(f"  {C.PURPLE}╰{'─' * 70}{C.RST}")
     
     elif not compact:
         # Non-compact but not verbose - show more but not everything
@@ -703,7 +761,7 @@ def print_tool(name: str, args: Dict[str, Any], result: str, compact: bool = Tru
 
 def _print_completion_box(summary: str, success: bool = True) -> None:
     """Print a nice completion box with the summary."""
-    icon = "âœ“" if success else "âœ—"
+    icon = "✓" if success else "✗"
     color = C.GREEN if success else C.RED
     border_color = C.BPURPLE
     
@@ -723,13 +781,13 @@ def _print_completion_box(summary: str, success: bool = True) -> None:
         lines.append(current_line)
     
     print()
-    print(f"  {border_color}â•­{'â”€' * 70}â•®{C.RST}")
-    print(f"  {border_color}â”‚{C.RST}  {color}{icon} COMPLETE{C.RST}{' ' * 58}{border_color}â”‚{C.RST}")
-    print(f"  {border_color}â”œ{'â”€' * 70}â”¤{C.RST}")
+    print(f"  {border_color}╭{'─' * 70}╮{C.RST}")
+    print(f"  {border_color}│{C.RST}  {color}{icon} COMPLETE{C.RST}{' ' * 58}{border_color}│{C.RST}")
+    print(f"  {border_color}├{'─' * 70}┤{C.RST}")
     for line in lines:
         padding = 68 - len(line)
-        print(f"  {border_color}â”‚{C.RST}  {line}{' ' * padding}{border_color}â”‚{C.RST}")
-    print(f"  {border_color}â•°{'â”€' * 70}â•¯{C.RST}")
+        print(f"  {border_color}│{C.RST}  {line}{' ' * padding}{border_color}│{C.RST}")
+    print(f"  {border_color}╰{'─' * 70}╯{C.RST}")
     print()
     sys.stdout.flush()
 
@@ -752,7 +810,7 @@ def build_continue_prompt(state: State, last_tools: List[str], had_content: bool
     
     # Verification status
     if state.verify_summary and "error" in state.verify_summary.lower():
-        parts.append(f"âš ï¸ Verification issue: {state.verify_summary}")
+        parts.append(f"⚠️ Verification issue: {state.verify_summary}")
     
     # Build the prompt
     context = "\n".join(parts)
@@ -880,7 +938,7 @@ def cmd_help(state: State, agent: Agent, args: str) -> None:
     print(_s("  Commands:", C.BOLD))
     max_name = max(len(n) for n in _COMMANDS) + 2
     for name, (_, help_text) in sorted(_COMMANDS.items()):
-        print(f"  {_s(name.ljust(max_name), C.CYAN)} â”€ {help_text}")
+        print(f"  {_s(name.ljust(max_name), C.CYAN)} ─ {help_text}")
     print()
     print(_s("  Shortcuts: ", C.DIM) + ", ".join(f"{s}={n}" for s, n in sorted(_SHORTCUTS.items())))
     print(_s("  Multiline: Start with <<< (end >>>) or \"\"\"", C.DIM))
@@ -1127,9 +1185,9 @@ def cmd_freemodels(state: State, agent: Agent, args: str) -> None:
         return
     print()
     print(_s("  Free Models (via g4f - no API key needed):", C.BOLD))
-    print(_s("  " + "â”€" * 50, C.DIM))
+    print(_s("  " + "─" * 50, C.DIM))
     for name, info in sorted(G4F_FREE_MODELS.items()):
-        current = " â† current" if name == agent.model else ""
+        current = " ← current" if name == agent.model else ""
         print(f"  {_s(name, C.CYAN)}: {info['description']}{_s(current, C.GREEN)}")
     print()
     print(_s("  Switch with: model <name>", C.DIM))
@@ -1140,30 +1198,30 @@ def cmd_models(state: State, agent: Agent, args: str) -> None:
     filter_text = args.strip().lower()
     
     print()
-    print(_s("â•" * 70, C.BPURPLE))
+    print(_s("═" * 70, C.BPURPLE))
     print(_s("  ALL AVAILABLE MODELS", C.BOLD))
-    print(_s("â•" * 70, C.BPURPLE))
+    print(_s("═" * 70, C.BPURPLE))
     
-    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    # ═══════════════════════════════════════════════════════════════════════
     # CATEGORY 1: G4F FREE MODELS (No API Key Required)
-    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    # ═══════════════════════════════════════════════════════════════════════
     g4f_models = list(G4F_FREE_MODELS.items())
     if filter_text:
         g4f_models = [(k, v) for k, v in g4f_models if filter_text in k.lower() or filter_text in v.get("description", "").lower()]
     g4f_models = sorted(g4f_models, key=lambda x: x[0])
     
     print()
-    print(_s(f"  â”Œâ”€ [1] G4F FREE - No API Key Required ({len(g4f_models)} models) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”", C.GREEN + C.BOLD))
+    print(_s(f"  ┌─ [1] G4F FREE - No API Key Required ({len(g4f_models)} models) ─────────────┐", C.GREEN + C.BOLD))
     print()
     for name, info in g4f_models:
-        current = " â† CURRENT" if name == agent.model else ""
+        current = " ← CURRENT" if name == agent.model else ""
         desc = info.get("description", "")
         print(f"    {_s(name, C.CYAN):35} {_s(desc, C.DIM)}{_s(current, C.GREEN + C.BOLD)}")
     print()
     
-    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    # ═══════════════════════════════════════════════════════════════════════
     # CATEGORY 2 & 3: OpenRouter Models (Free and Paid)
-    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    # ═══════════════════════════════════════════════════════════════════════
     print(_s("  Fetching OpenRouter models...", C.DIM))
     
     try:
@@ -1173,19 +1231,19 @@ def cmd_models(state: State, agent: Agent, args: str) -> None:
             
             # CATEGORY 2: OpenRouter FREE
             print()
-            print(_s(f"  â”Œâ”€ [2] OPENROUTER FREE - Requires Free API Key ({len(or_free)} models) â”€â”€â”", C.GREEN + C.BOLD))
+            print(_s(f"  ┌─ [2] OPENROUTER FREE - Requires Free API Key ({len(or_free)} models) ──┐", C.GREEN + C.BOLD))
             print()
             for m in or_free:
                 model_id = m.get("id", "?")
                 ctx = m.get("context_length", 0)
                 ctx_str = f"{ctx//1000}k" if ctx >= 1000 else str(ctx)
-                current = " â† CURRENT" if model_id == agent.model else ""
+                current = " ← CURRENT" if model_id == agent.model else ""
                 print(f"    {_s(model_id, C.CYAN):50} {_s(f'({ctx_str})', C.DIM)}{_s(current, C.GREEN + C.BOLD)}")
             print()
             
             # CATEGORY 3: OpenRouter PAID
             print()
-            print(_s(f"  â”Œâ”€ [3] OPENROUTER PAID ({len(or_paid)} models) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”", C.YELLOW + C.BOLD))
+            print(_s(f"  ┌─ [3] OPENROUTER PAID ({len(or_paid)} models) ─────────────────────────┐", C.YELLOW + C.BOLD))
             print()
             for m in or_paid:
                 model_id = m.get("id", "?")
@@ -1194,7 +1252,7 @@ def cmd_models(state: State, agent: Agent, args: str) -> None:
                 pricing = m.get("pricing", {})
                 price = float(pricing.get("prompt", "0") or "0") * 1000000
                 price_str = f"${price:.2f}/M" if price > 0 else ""
-                current = " â† CURRENT" if model_id == agent.model else ""
+                current = " ← CURRENT" if model_id == agent.model else ""
                 print(f"    {_s(model_id, C.CYAN):50} {_s(f'({ctx_str}) {price_str}', C.DIM)}{_s(current, C.GREEN + C.BOLD)}")
             print()
             
@@ -1202,9 +1260,9 @@ def cmd_models(state: State, agent: Agent, args: str) -> None:
         status(f"Could not fetch OpenRouter models: {e}", "warning")
         print(_s("  Visit https://openrouter.ai/models to see OpenRouter models", C.DIM))
     
-    print(_s("â•" * 70, C.BPURPLE))
+    print(_s("═" * 70, C.BPURPLE))
     print(_s("  Usage: model <name>  |  G4F models need no API key!", C.DIM))
-    print(_s("â•" * 70, C.BPURPLE))
+    print(_s("═" * 70, C.BPURPLE))
     print()
 
 @cmd("index", "Rebuild retrieval index")
@@ -1237,16 +1295,16 @@ def cmd_tokens(state: State, agent: Agent, args: str) -> None:
             TokenManager._current_index = 0
         status("Tokens cleared", "success")
         return
-    print(f"  {C.GRAY}â•­â”€ Enter API tokens (one per line, empty line to finish){C.RST}")
-    print(f"  {C.GRAY}â”‚  Saves to: ~/.supercoder/tokens.txt{C.RST}")
-    print(f"  {C.GRAY}â”‚  Current: {current_count} token(s){C.RST}")
+    print(f"  {C.GRAY}╭─ Enter API tokens (one per line, empty line to finish){C.RST}")
+    print(f"  {C.GRAY}│  Saves to: ~/.supercoder/tokens.txt{C.RST}")
+    print(f"  {C.GRAY}│  Current: {current_count} token(s){C.RST}")
     new_tokens = []
     while True:
-        line = input(f"  {C.BPURPLE}â”‚{C.RST} ")
+        line = input(f"  {C.BPURPLE}│{C.RST} ")
         if not line.strip():
             break
         new_tokens.append(line.strip())
-    print(f"  {C.GRAY}â•°â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€{C.RST}")
+    print(f"  {C.GRAY}╰─────────────────────────────{C.RST}")
     if not new_tokens:
         status("No tokens entered", "warning")
         return
@@ -1280,7 +1338,7 @@ def cmd_tasks(state: State, agent: Agent, args: str) -> None:
         return
     print()
     print(_s("  Tasks:", C.BOLD))
-    print(_s("  " + "â”€" * 50, C.DIM))
+    print(_s("  " + "─" * 50, C.DIM))
     for num, done, text in tasks:
         mark = _s("[x]", C.GREEN) if done else _s("[ ]", C.DIM)
         print(f"  {num}. {mark} {_s(text, C.DIM if done else C.RST)}")
@@ -1592,8 +1650,8 @@ def run(agent: Agent, state: State) -> None:
                             should_stop = True
                         else:
                             status(msg, "info")
-                            print(f"{C.BPURPLE}  â•­â”€ {C.BRED}response needed{C.RST}")
-                            answer = input(f"{C.BPURPLE}  â•°â”€â–¸ {C.RST}")
+                            print(f"{C.BPURPLE}  ╭─ {C.BRED}response needed{C.RST}")
+                            answer = input(f"{C.BPURPLE}  ╰─▸ {C.RST}")
                             agent.AddToolResult(tc_id, name, f"User response: {answer}")
                             full_prompt = answer
                         continue
@@ -1613,7 +1671,7 @@ def run(agent: Agent, state: State) -> None:
                     break
                 _verify_writes(state)
                 if not state.auto_mode:
-                    cont = input(f"{C.BPURPLE}  â•°â”€â–¸ {C.BYELLOW}continue?{C.RST} {C.GRAY}(y/n){C.RST} ")
+                    cont = input(f"{C.BPURPLE}  ╰─▸ {C.BYELLOW}continue?{C.RST} {C.GRAY}(y/n){C.RST} ")
                     if cont.lower() not in ('y', 'yes', ''):
                         break
                 full_prompt = build_continue_prompt(state, tools_used_this_turn, had_content)
