@@ -1674,7 +1674,7 @@ def run(agent: Agent, state: State) -> None:
                     if state.auto_mode:
                         # If model just talked without acting, give it a nudge to use tools
                         if had_content:
-                            full_prompt = "STOP explaining. You MUST output a ```tool_call``` block NOW. Example:\n```tool_call\n{\"tool\": \"listDirectory\", \"args\": {\"path\": \".\"}}\n```"
+                            full_prompt = "Continue with the task. Use tools to make progress."
                         else:
                             full_prompt = build_continue_prompt(state, tools_used_this_turn, had_content)
                         continue

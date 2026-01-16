@@ -222,7 +222,8 @@ MODEL_LIMITS = {
 
 # Models that work better with text-based tool calling instead of native
 TEXT_TOOL_MODELS = {
-    "qwen/qwen3-coder",  # Has issues with native tool calling
+    # Empty - all OpenRouter models use native tool calling
+    # Only g4f models use text-based tool calling
 }
 
 
