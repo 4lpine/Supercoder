@@ -1640,14 +1640,10 @@ def run(agent: Agent, state: State) -> None:
                     break
                 state.auto_steps += 1
                 
-                # Use streaming highlighter for syntax-highlighted output
-                # Suppress pre-tool-call text for text-tool models (they tend to "think out loud")
-                suppress_thinking = agent.model in TEXT_TOOL_MODELS or agent.use_g4f
-                highlighter = StreamingHighlighter(suppress_pre_tool_text=suppress_thinking)
+                # Use simple streaming - just print chunks directly
                 def on_chunk(chunk: str):
-                    highlighter.process_chunk(chunk)
+                    print(chunk, end='', flush=True)
                 content, tool_calls = agent.PromptWithTools(full_prompt, streaming=True, on_chunk=on_chunk)
-                highlighter.flush()
                 
                 had_content = bool(content)
                 if content:
