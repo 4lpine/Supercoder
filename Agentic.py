@@ -230,21 +230,24 @@ TEXT_TOOL_MODELS = {
 def _build_tools_prompt(tools: List[dict]) -> str:
     """Build a prompt describing available tools for text-based tool calling."""
     lines = [
-        "# TOOL CALLING INSTRUCTIONS",
+        "# CRITICAL: TOOL CALLING FORMAT",
         "",
-        "You MUST use tools to complete tasks. Do NOT just describe what you would do - actually do it by calling tools.",
-        "",
-        "To call a tool, output a JSON block in this EXACT format:",
+        "You MUST call tools using this EXACT format - no exceptions:",
         "",
         "```tool_call",
-        '{"tool": "tool_name", "args": {"param1": "value1"}}',
+        '{"tool": "toolName", "args": {"param": "value"}}',
         "```",
         "",
-        "IMPORTANT:",
-        "- Call tools IMMEDIATELY when you know what to do - don't explain first",
-        "- You can call multiple tools by including multiple ```tool_call``` blocks",
-        "- After tool results, continue working until the task is complete",
-        "- Call 'finish' tool when done",
+        "RULES:",
+        "1. EVERY response must contain at least one ```tool_call``` block",
+        "2. Do NOT write text like 'Let me...' or 'I will...' - just call the tool",
+        "3. If you need to do something, call the tool IMMEDIATELY",
+        "4. Call 'finish' when the task is complete",
+        "",
+        "WRONG: 'Let me check the directory' (no tool call)",
+        "RIGHT: ```tool_call",
+        '{"tool": "listDirectory", "args": {"path": "."}}',
+        "```",
         "",
         "Available tools:",
         ""
@@ -260,13 +263,11 @@ def _build_tools_prompt(tools: List[dict]) -> str:
         for pname, pinfo in params.items():
             req = "*" if pname in required else ""
             ptype = pinfo.get("type", "string")
-            pdesc = pinfo.get("description", "")
-            param_strs.append(f"    - {pname}{req} ({ptype}): {pdesc}")
+            param_strs.append(f"    {pname}{req}: {ptype}")
         
         lines.append(f"- {name}: {desc}")
         if param_strs:
             lines.extend(param_strs)
-        lines.append("")
     
     return "\n".join(lines)
 
