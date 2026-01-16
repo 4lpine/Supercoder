@@ -546,7 +546,7 @@ class StreamingHighlighter:
     def __init__(self):
         self.total_chars = 0
         self.thinking_chars = 0
-        self.spinner_chars = "â£¾â£½â£»â¢¿â¡¿â£Ÿâ£¯â£·"
+        self.spinner_chars = "|/-\\"
         self.spinner_idx = 0
         self.in_tool_call = False
         self.last_update = time.time()
