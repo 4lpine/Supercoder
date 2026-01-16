@@ -594,10 +594,21 @@ class StreamingHighlighter:
     
     def process_chunk(self, chunk: str) -> None:
         """Process a streaming chunk - show spinner during tool calls, print text otherwise."""
+        
+        # Check for tool call progress signal (from OpenRouter native tool calls)
+        if chunk.startswith('\x00TOOL:'):
+            try:
+                chars = int(chunk[6:])
+                self.tool_call_chars += chars
+            except:
+                self.tool_call_chars += 10
+            self._show_spinner()
+            return
+        
         self.total_chars += len(chunk)
         self.buffer += chunk
         
-        # Check if we're entering a tool_call block
+        # Check if we're entering a tool_call block (g4f text-based tool calls)
         if not self.in_tool_call and '```tool_call' in self.buffer:
             self.in_tool_call = True
             self.tool_call_chars = 0

@@ -821,6 +821,9 @@ class Agent:
                                             tool_calls_data[idx]['name'] = tc['function']['name']
                                         if 'arguments' in tc['function']:
                                             tool_calls_data[idx]['arguments'] += tc['function']['arguments']
+                                            # Signal tool call progress to spinner
+                                            if on_chunk:
+                                                on_chunk(f"\x00TOOL:{len(tc['function']['arguments'])}")
                         except:
                             pass
                     
