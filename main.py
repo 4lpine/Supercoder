@@ -150,6 +150,37 @@ def header() -> None:
     {Fore.RESET}
     """
     print(Banner)
+    # Show commands
+    print(_s("  Commands:", C.BOLD))
+    cmds = [
+        ("auto", "Toggle autonomous mode (auto on|off) or set cap (auto cap N)"),
+        ("cd", "Change directory (within workspace)"),
+        ("clear", "Clear conversation history"),
+        ("compact", "Toggle compact output (compact on|off)"),
+        ("help", "Show this help"),
+        ("index", "Rebuild retrieval index"),
+        ("model", "Show or switch model"),
+        ("models", "List available OpenRouter models"),
+        ("pin", "Pin a file to always include in context"),
+        ("pins", "List pinned files"),
+        ("plan", "Generate requirements, design, and tasks for a project"),
+        ("quit", "Exit supercoder"),
+        ("status", "Show session status"),
+        ("task do", "Execute a specific task"),
+        ("task done", "Mark a task as complete"),
+        ("task next", "Execute next incomplete task"),
+        ("task undo", "Mark a task as incomplete"),
+        ("tasks", "List all tasks"),
+        ("tokens", "Add/manage API tokens (saved globally)"),
+        ("unpin", "Unpin a file"),
+        ("verbose", "Toggle verbose output - show full file contents (verbose on|off)"),
+        ("verify", "Set verification mode (off|py_compile|<cmd>)"),
+    ]
+    for name, desc in cmds:
+        print(f"  {_s(name.ljust(12), C.CYAN)} ─ {desc}")
+    print()
+    print(_s("  Shortcuts: ", C.DIM) + "exit=quit, q=quit, tc=task done, td=task do, tl=tasks, tn=task next, tu=task undo")
+    print(_s("  Multiline: Start with <<< (end >>>) or \"\"\"", C.DIM))
     print()
 
 def divider() -> None:
@@ -1029,6 +1060,10 @@ def run(agent: Agent, state: State) -> None:
                 had_content = bool(content)
                 if content:
                     print()
+                
+                # Show token usage after each query
+                usage = agent.get_token_usage()
+                print(f"  {C.DIM}[{usage['used']:,} tokens, {usage['percent']}%]{C.RST}")
                 
                 # Track tools used this turn
                 tools_used_this_turn = []
