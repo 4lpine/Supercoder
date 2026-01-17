@@ -764,6 +764,427 @@ def interact_with_user(message: str, interaction_type: str = "info") -> Dict[str
     }
 
 
+# --- New Enhanced Tools ---
+
+def get_file_info(path: str) -> Dict[str, Any]:
+    """
+    Get file metadata including size, modification time, permissions.
+    
+    Args:
+        path: Path to the file or directory
+    
+    Returns:
+        Dict with file information or error
+    """
+    try:
+        p = Path(path)
+        if not p.exists():
+            return {"error": f"Path does not exist: {path}"}
+        
+        stat = p.stat()
+        info = {
+            "path": str(p),
+            "exists": True,
+            "is_file": p.is_file(),
+            "is_dir": p.is_dir(),
+            "size_bytes": stat.st_size,
+            "size_human": _human_readable_size(stat.st_size),
+            "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+            "created": datetime.fromtimestamp(stat.st_ctime).isoformat(),
+        }
+        
+        if p.is_file():
+            info["extension"] = p.suffix
+            info["name"] = p.name
+            
+        return info
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def _human_readable_size(size_bytes: int) -> str:
+    """Convert bytes to human readable format"""
+    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+        if size_bytes < 1024.0:
+            return f"{size_bytes:.1f} {unit}"
+        size_bytes /= 1024.0
+    return f"{size_bytes:.1f} PB"
+
+
+def list_directory_tree(path: str = ".", max_depth: int = 3, ignore_patterns: List[str] = None) -> Dict[str, Any]:
+    """
+    Get a recursive tree view of directory structure.
+    
+    Args:
+        path: Root directory to start from
+        max_depth: Maximum depth to recurse (default 3)
+        ignore_patterns: List of patterns to ignore (e.g., ['.git', '__pycache__', 'node_modules'])
+    
+    Returns:
+        Dict with tree structure
+    """
+    if ignore_patterns is None:
+        ignore_patterns = ['.git', '__pycache__', 'node_modules', '.venv', 'venv', '.supercoder']
+    
+    def should_ignore(name: str) -> bool:
+        return any(pattern in name for pattern in ignore_patterns)
+    
+    def build_tree(current_path: Path, current_depth: int) -> Dict[str, Any]:
+        if current_depth > max_depth:
+            return {"truncated": True}
+        
+        try:
+            if not current_path.is_dir():
+                return {"type": "file", "size": current_path.stat().st_size}
+            
+            children = {}
+            for child in sorted(current_path.iterdir(), key=lambda x: (not x.is_dir(), x.name)):
+                if should_ignore(child.name):
+                    continue
+                children[child.name] = build_tree(child, current_depth + 1)
+            
+            return {"type": "directory", "children": children}
+        except PermissionError:
+            return {"error": "Permission denied"}
+        except Exception as e:
+            return {"error": str(e)}
+    
+    try:
+        root = Path(path)
+        if not root.exists():
+            return {"error": f"Path does not exist: {path}"}
+        
+        tree = build_tree(root, 0)
+        return {"path": str(root), "tree": tree}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def replace_multiple(path: str, replacements: List[Dict[str, str]]) -> Dict[str, Any]:
+    """
+    Make multiple find/replace operations in one file.
+    
+    Args:
+        path: Path to the file
+        replacements: List of dicts with 'old' and 'new' keys
+    
+    Returns:
+        Dict with results
+    """
+    undo_manager.snapshot([path])
+    try:
+        content = Path(path).read_text(encoding='utf-8')
+        original_content = content
+        
+        results = []
+        for i, repl in enumerate(replacements):
+            old = repl.get('old', '')
+            new = repl.get('new', '')
+            
+            if not old:
+                results.append({"index": i, "error": "Missing 'old' value"})
+                continue
+            
+            count = content.count(old)
+            if count == 0:
+                results.append({"index": i, "old": old[:50], "found": False})
+            else:
+                content = content.replace(old, new)
+                results.append({"index": i, "old": old[:50], "new": new[:50], "count": count})
+        
+        if content != original_content:
+            Path(path).write_text(content, encoding='utf-8')
+            return {"path": path, "replacements": results, "modified": True}
+        else:
+            return {"path": path, "replacements": results, "modified": False}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def git_status() -> Dict[str, Any]:
+    """
+    Get current git status - branch, modified files, etc.
+    
+    Returns:
+        Dict with git status information
+    """
+    try:
+        # Check if git is available
+        result = execute_pwsh("git --version")
+        if result["returncode"] != 0:
+            return {"error": "Git is not installed or not in PATH"}
+        
+        # Get current branch
+        branch_result = execute_pwsh("git branch --show-current")
+        branch = branch_result["stdout"].strip() if branch_result["returncode"] == 0 else "unknown"
+        
+        # Get status
+        status_result = execute_pwsh("git status --porcelain")
+        
+        if status_result["returncode"] != 0:
+            return {"error": "Not a git repository or git error", "details": status_result["stderr"]}
+        
+        # Parse status
+        lines = status_result["stdout"].strip().split('\n') if status_result["stdout"].strip() else []
+        
+        modified = []
+        added = []
+        deleted = []
+        untracked = []
+        
+        for line in lines:
+            if not line:
+                continue
+            status_code = line[:2]
+            filepath = line[3:]
+            
+            if status_code.strip() == 'M' or 'M' in status_code:
+                modified.append(filepath)
+            elif status_code.strip() == 'A' or 'A' in status_code:
+                added.append(filepath)
+            elif status_code.strip() == 'D' or 'D' in status_code:
+                deleted.append(filepath)
+            elif status_code.strip() == '??':
+                untracked.append(filepath)
+        
+        return {
+            "branch": branch,
+            "modified": modified,
+            "added": added,
+            "deleted": deleted,
+            "untracked": untracked,
+            "clean": len(lines) == 0
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def git_diff(path: str = None, staged: bool = False) -> Dict[str, Any]:
+    """
+    Show git diff for a file or entire repo.
+    
+    Args:
+        path: Optional path to specific file. If None, shows diff for entire repo
+        staged: If True, shows staged changes (git diff --cached)
+    
+    Returns:
+        Dict with diff output
+    """
+    try:
+        cmd = "git diff"
+        if staged:
+            cmd += " --cached"
+        if path:
+            cmd += f' "{path}"'
+        
+        result = execute_pwsh(cmd)
+        
+        if result["returncode"] != 0:
+            return {"error": "Git error", "details": result["stderr"]}
+        
+        return {
+            "path": path or "all files",
+            "staged": staged,
+            "diff": result["stdout"],
+            "has_changes": bool(result["stdout"].strip())
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def find_in_file(path: str, pattern: str, context_lines: int = 2, case_sensitive: bool = False) -> Dict[str, Any]:
+    """
+    Search for pattern in a specific file with context lines.
+    
+    Args:
+        path: Path to the file
+        pattern: Text or regex pattern to search for
+        context_lines: Number of lines to show before/after match (default 2)
+        case_sensitive: Whether search is case sensitive (default False)
+    
+    Returns:
+        Dict with matches and context
+    """
+    try:
+        if not Path(path).exists():
+            return {"error": f"File not found: {path}"}
+        
+        content = Path(path).read_text(encoding='utf-8')
+        lines = content.split('\n')
+        
+        # Compile regex
+        flags = 0 if case_sensitive else re.IGNORECASE
+        try:
+            regex = re.compile(pattern, flags)
+        except re.error as e:
+            return {"error": f"Invalid regex pattern: {e}"}
+        
+        matches = []
+        for i, line in enumerate(lines, 1):
+            if regex.search(line):
+                # Get context
+                start = max(0, i - 1 - context_lines)
+                end = min(len(lines), i + context_lines)
+                
+                context = []
+                for j in range(start, end):
+                    context.append({
+                        "line_number": j + 1,
+                        "content": lines[j],
+                        "is_match": j + 1 == i
+                    })
+                
+                matches.append({
+                    "line_number": i,
+                    "line": line,
+                    "context": context
+                })
+        
+        return {
+            "path": path,
+            "pattern": pattern,
+            "matches": len(matches),
+            "results": matches[:50]  # Limit to 50 matches
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def get_environment_variable(name: str, default: str = None) -> Dict[str, Any]:
+    """
+    Get environment variable value.
+    
+    Args:
+        name: Environment variable name
+        default: Default value if not found
+    
+    Returns:
+        Dict with variable value or error
+    """
+    try:
+        value = os.environ.get(name, default)
+        return {
+            "name": name,
+            "value": value,
+            "exists": name in os.environ
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def validate_json(path: str) -> Dict[str, Any]:
+    """
+    Validate JSON file and return any errors.
+    
+    Args:
+        path: Path to JSON file
+    
+    Returns:
+        Dict with validation results
+    """
+    try:
+        if not Path(path).exists():
+            return {"error": f"File not found: {path}"}
+        
+        content = Path(path).read_text(encoding='utf-8')
+        
+        try:
+            data = json.loads(content)
+            return {
+                "path": path,
+                "valid": True,
+                "type": type(data).__name__,
+                "keys": list(data.keys()) if isinstance(data, dict) else None,
+                "length": len(data) if isinstance(data, (list, dict)) else None
+            }
+        except json.JSONDecodeError as e:
+            return {
+                "path": path,
+                "valid": False,
+                "error": str(e),
+                "line": e.lineno,
+                "column": e.colno,
+                "message": e.msg
+            }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def count_lines(path: str) -> Dict[str, Any]:
+    """
+    Count lines, words, and characters in a file.
+    
+    Args:
+        path: Path to the file
+    
+    Returns:
+        Dict with counts
+    """
+    try:
+        if not Path(path).exists():
+            return {"error": f"File not found: {path}"}
+        
+        content = Path(path).read_text(encoding='utf-8')
+        lines = content.split('\n')
+        
+        # Count non-empty lines
+        non_empty_lines = sum(1 for line in lines if line.strip())
+        
+        # Count words
+        words = len(content.split())
+        
+        # Count characters
+        chars = len(content)
+        chars_no_whitespace = len(content.replace(' ', '').replace('\n', '').replace('\t', ''))
+        
+        return {
+            "path": path,
+            "lines": len(lines),
+            "non_empty_lines": non_empty_lines,
+            "words": words,
+            "characters": chars,
+            "characters_no_whitespace": chars_no_whitespace,
+            "size_bytes": Path(path).stat().st_size
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def backup_file(path: str, backup_suffix: str = ".bak") -> Dict[str, Any]:
+    """
+    Create a backup copy of a file.
+    
+    Args:
+        path: Path to the file to backup
+        backup_suffix: Suffix for backup file (default .bak)
+    
+    Returns:
+        Dict with backup information
+    """
+    try:
+        if not Path(path).exists():
+            return {"error": f"File not found: {path}"}
+        
+        if not Path(path).is_file():
+            return {"error": f"Path is not a file: {path}"}
+        
+        # Create backup path
+        backup_path = str(Path(path)) + backup_suffix
+        
+        # Copy file
+        import shutil
+        shutil.copy2(path, backup_path)
+        
+        return {
+            "original": path,
+            "backup": backup_path,
+            "size": Path(backup_path).stat().st_size,
+            "created": datetime.now().isoformat()
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
 def finish(summary: str, status: str = "complete") -> Dict[str, Any]:
     """
     Signal that the agent has finished its current task and wants user review.

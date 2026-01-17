@@ -217,25 +217,37 @@ Popular choices:
 SuperCoder has access to these tools:
 
 ### File Operations
-- `readFile` - Read file contents
+- `readFile` - Read file contents (with optional line ranges)
 - `readCode` - Read code with AST analysis
 - `fsWrite` - Create/overwrite files
 - `fsAppend` - Append to files
 - `strReplace` - Find and replace in files
+- `replaceMultiple` - Multiple replacements in one file
 - `deleteFile` - Delete files
 - `listDirectory` - List folder contents
+- `listDirectoryTree` - Recursive tree view of directories
+- `getFileInfo` - Get file metadata (size, modified time, etc.)
+- `countLines` - Count lines, words, characters
+- `backupFile` - Create backup before modifying
 
 ### Code Intelligence
 - `grepSearch` - Search for patterns in files
 - `fileSearch` - Find files by name
+- `findInFile` - Search within a specific file with context
 - `getDiagnostics` - Check for syntax errors
 - `getSymbols` - Extract functions/classes from code
 - `findReferences` - Find all uses of a symbol
+- `validateJson` - Validate JSON files
+
+### Git Integration
+- `gitStatus` - Check git status (branch, modified files)
+- `gitDiff` - Show git diff for files or repo
 
 ### Shell & System
 - `executePwsh` - Run shell commands (PowerShell on Windows)
 - `controlPwshProcess` - Start/stop background processes
 - `systemInfo` - Get OS and environment info
+- `getEnvironmentVariable` - Read environment variables
 
 ### Development
 - `runTests` - Run pytest
