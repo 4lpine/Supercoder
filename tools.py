@@ -182,10 +182,33 @@ def list_directory(path: str = ".") -> Dict[str, Any]:
         })
     return {"entries": sorted(entries, key=lambda x: (not x["is_dir"], x["name"]))}
 
-def read_file(path: str) -> str:
-    """Read a file's contents"""
+def read_file(path: str, start_line: int = None, end_line: int = None) -> str:
+    """
+    Read a file's contents, optionally with line range.
+    
+    Args:
+        path: Path to the file
+        start_line: Starting line number (1-indexed, inclusive). If None, starts from beginning
+        end_line: Ending line number (1-indexed, inclusive). If None, reads to end
+    
+    Returns:
+        File contents as string, or just the specified line range
+    """
     with open(path, 'r', encoding='utf-8') as f:
-        return f.read()
+        if start_line is None and end_line is None:
+            return f.read()
+        
+        lines = f.readlines()
+        
+        # Convert to 0-indexed
+        start_idx = (start_line - 1) if start_line else 0
+        end_idx = end_line if end_line else len(lines)
+        
+        # Clamp to valid range
+        start_idx = max(0, min(start_idx, len(lines)))
+        end_idx = max(0, min(end_idx, len(lines)))
+        
+        return ''.join(lines[start_idx:end_idx])
 
 def read_multiple_files(paths: List[str]) -> Dict[str, Any]:
     """Read multiple files at once"""
