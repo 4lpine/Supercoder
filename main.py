@@ -10,6 +10,8 @@ import json
 import re
 import shutil
 import subprocess
+import time
+import requests
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
@@ -194,11 +196,48 @@ def divider() -> None:
 # Input & Model Management
 # ==============================================================================
 
+def _get_openrouter_balance() -> Optional[str]:
+    """Fetch OpenRouter API balance. Returns formatted string or None if unavailable."""
+    try:
+        TokenManager.load_tokens()
+        api_key = TokenManager.get_token()
+        
+        response = requests.get(
+            "https://openrouter.ai/api/v1/auth/key",
+            headers={"Authorization": f"Bearer {api_key}"},
+            timeout=2
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            # OpenRouter returns balance in credits
+            balance = data.get("data", {}).get("limit_remaining")
+            if balance is not None:
+                return f"{balance:.2f}"
+        return None
+    except Exception:
+        return None
+
 def _build_prompt() -> str:
     import getpass
     user = getpass.getuser()
     cwd = Path.cwd().name or "~"
-    line1 = f"{C.BPURPLE}┌──({C.BRED}{user}{C.BPURPLE}@{C.BRED}supercoder{C.BPURPLE})-[{C.BOLD}{C.WHITE}{cwd}{C.RST}{C.BPURPLE}]{C.RST}"
+    
+    # Try to get balance (cached for performance)
+    balance_str = ""
+    if not hasattr(_build_prompt, '_balance_cache'):
+        _build_prompt._balance_cache = {'balance': None, 'timestamp': 0}
+    
+    # Refresh balance every 60 seconds
+    current_time = time.time()
+    if current_time - _build_prompt._balance_cache['timestamp'] > 60:
+        balance = _get_openrouter_balance()
+        _build_prompt._balance_cache = {'balance': balance, 'timestamp': current_time}
+    
+    if _build_prompt._balance_cache['balance']:
+        balance_str = f"-[{C.BYELLOW}${_build_prompt._balance_cache['balance']}{C.BPURPLE}]"
+    
+    line1 = f"{C.BPURPLE}┌──({C.BRED}{user}{C.BPURPLE}@{C.BRED}supercoder{C.BPURPLE})-[{C.BOLD}{C.WHITE}{cwd}{C.RST}{C.BPURPLE}]{balance_str}{C.RST}"
     line2 = f"{C.BPURPLE}└─{C.BRED}${C.RST} "
     return f"{line1}\n{line2}"
 
