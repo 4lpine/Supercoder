@@ -11,6 +11,7 @@ import re
 import shutil
 import subprocess
 import time
+import threading
 import requests
 from dataclasses import dataclass, field
 from functools import lru_cache
@@ -202,20 +203,38 @@ def _get_openrouter_balance() -> Optional[str]:
         TokenManager.load_tokens()
         api_key = TokenManager.get_token()
         
+        if not api_key:
+            return None
+        
+        # Use the correct endpoint: /api/v1/auth/key
         response = requests.get(
             "https://openrouter.ai/api/v1/auth/key",
             headers={"Authorization": f"Bearer {api_key}"},
-            timeout=2
+            timeout=1  # Reduced timeout - balance is optional
         )
         
         if response.status_code == 200:
             data = response.json()
-            # OpenRouter returns balance in credits
-            balance = data.get("data", {}).get("limit_remaining")
-            if balance is not None:
-                return f"{balance:.2f}"
+            if "data" in data:
+                # Check if user has a spending limit set
+                limit_remaining = data["data"].get("limit_remaining")
+                if limit_remaining is not None:
+                    return f"${limit_remaining:.2f}"
+                
+                # If no limit set, calculate from limit - usage
+                limit = data["data"].get("limit")
+                usage = data["data"].get("usage")
+                if limit is not None and usage is not None:
+                    remaining = limit - usage
+                    return f"${remaining:.2f}"
+                
+                # If unlimited (no limit set), just show usage
+                if limit is None and usage is not None:
+                    return f"${usage:.2f}"
+        
         return None
     except Exception:
+        # Silently fail - balance is optional and shouldn't block commands
         return None
 
 def _build_prompt() -> str:
@@ -235,7 +254,7 @@ def _build_prompt() -> str:
         _build_prompt._balance_cache = {'balance': balance, 'timestamp': current_time}
     
     if _build_prompt._balance_cache['balance']:
-        balance_str = f"-[{C.BYELLOW}${_build_prompt._balance_cache['balance']}{C.BPURPLE}]"
+        balance_str = f"-[{C.BYELLOW}{_build_prompt._balance_cache['balance']}{C.BPURPLE}]"
     
     line1 = f"{C.BPURPLE}┌──({C.BRED}{user}{C.BPURPLE}@{C.BRED}supercoder{C.BPURPLE})-[{C.BOLD}{C.WHITE}{cwd}{C.RST}{C.BPURPLE}]{balance_str}{C.RST}"
     line2 = f"{C.BPURPLE}└─{C.BRED}${C.RST} "
@@ -570,6 +589,15 @@ def build_continue_prompt(state: State, last_tools: List[str], had_content: bool
     # Build the prompt
     context = "\n".join(parts)
     
+    # Special handling for background processes - check this FIRST
+    if last_tools and "controlPwshProcess" in last_tools:
+        return f"""Context:
+{context}
+
+IMPORTANT: You just started a background process which is now running independently. Do NOT wait for it to complete.
+
+Continue immediately with the next step of your task."""
+    
     if had_content and not last_tools:
         # Model talked but didn't use tools
         return f"""Context:
@@ -720,6 +748,23 @@ def cmd_clear(state: State, agent: Agent, args: str) -> None:
     agent.clear_history(keep_system=True)
     state.reset_task()
     status("Conversation cleared", "success")
+
+@cmd("cd", "Change directory (within workspace)")
+def cmd_cd(state: State, agent: Agent, args: str) -> None:
+    target = args.strip()
+    if not target:
+        status("Usage: cd <path>", "warning")
+        return
+    
+    try:
+        target_path = Path(target).resolve()
+        if target_path.exists() and target_path.is_dir():
+            os.chdir(target_path)
+            status(f"Changed to: {target_path}", "success")
+        else:
+            status(f"Directory not found: {target}", "error")
+    except Exception as e:
+        status(f"Failed to change directory: {e}", "error")
 
 @cmd("auto", "Toggle autonomous mode (auto on|off) or set cap (auto cap N)")
 def cmd_auto(state: State, agent: Agent, args: str) -> None:
@@ -985,9 +1030,13 @@ def cmd_supabase(state: State, agent: Agent, args: str) -> None:
         # Try to initialize with env vars or provided credentials
         if len(parts) >= 3:
             # supabase on <url> <key>
-            result = supabase_tools.init_supabase(parts[1], parts[2])
+            url = parts[1]
+            key = parts[2]
+            result = supabase_tools.init_supabase(url, key)
         else:
             result = supabase_tools.init_supabase()
+            url = None
+            key = None
         
         if "error" in result:
             status(result["error"], "error")
@@ -998,6 +1047,29 @@ def cmd_supabase(state: State, agent: Agent, args: str) -> None:
         else:
             status(result["message"], "success")
             print(f"  {C.GRAY}URL: {result['url']}{C.RST}")
+            
+            # Check if we're in a project directory and offer to create .env.local
+            if url and key:
+                cwd = Path.cwd()
+                # Check for common project indicators
+                has_package_json = (cwd / "package.json").exists()
+                has_next_config = (cwd / "next.config.js").exists() or (cwd / "next.config.ts").exists()
+                has_env_example = (cwd / ".env.local.example").exists() or (cwd / ".env.example").exists()
+                
+                if has_package_json or has_next_config or has_env_example:
+                    env_file = cwd / ".env.local"
+                    if not env_file.exists():
+                        print(f"\n  {C.BYELLOW}Detected project directory. Create .env.local with Supabase credentials?{C.RST}")
+                        response = input(f"  {C.BPURPLE}╰─▸{C.RST} {C.GRAY}(y/n){C.RST} ")
+                        if response.lower() in ('y', 'yes', ''):
+                            env_content = f"""# Supabase Configuration
+NEXT_PUBLIC_SUPABASE_URL={url}
+NEXT_PUBLIC_SUPABASE_ANON_KEY={key}
+"""
+                            env_file.write_text(env_content)
+                            status(f"Created .env.local with Supabase credentials", "success")
+                    else:
+                        print(f"  {C.GRAY}Note: .env.local already exists{C.RST}")
     
     elif parts[0] == "off":
         result = supabase_tools.disable_supabase()
@@ -1208,46 +1280,51 @@ def run(agent: Agent, state: State) -> None:
                 _thinking_text = "thinking"
                 _thinking_idx = [0]
                 _token_count = [0]
+                _stop_animation = [False]
+                
+                # Animated thinking indicator in background thread
+                def animate_thinking():
+                    while not _stop_animation[0] and not _has_content[0]:
+                        animated = ""
+                        for i, char in enumerate(_thinking_text):
+                            if i == _thinking_idx[0]:
+                                animated += f"{C.WHITE}{char}{C.RST}"
+                            elif abs(i - _thinking_idx[0]) == 1 or (i == 0 and _thinking_idx[0] == len(_thinking_text) - 1) or (i == len(_thinking_text) - 1 and _thinking_idx[0] == 0):
+                                animated += f"{C.BPURPLE}{char}{C.RST}"
+                            else:
+                                animated += f"{C.DIM}{char}{C.RST}"
+                        
+                        sys.stdout.write(f'\r  {animated}')
+                        sys.stdout.flush()
+                        _thinking_idx[0] = (_thinking_idx[0] + 1) % len(_thinking_text)
+                        time.sleep(0.15)
+                
+                # Start animation thread
+                animation_thread = threading.Thread(target=animate_thinking, daemon=True)
+                animation_thread.start()
                 
                 def on_chunk(chunk: str):
                     _stream_chars[0] += len(chunk)
-                    est_tokens = _stream_chars[0] // 4
-                    _thinking_idx[0] = (_thinking_idx[0] + 1) % len(_thinking_text)
                     
                     if chunk.strip():
-                        # Has visible content - print it
+                        # Has visible content - stop animation and print it
                         if not _has_content[0]:
-                            # First content - clear the thinking animation
+                            _stop_animation[0] = True
+                            time.sleep(0.2)  # Let animation thread finish
                             sys.stdout.write('\r' + ' ' * 60 + '\r')
                             _has_content[0] = True
                         
-                        # Print each token with a brief highlight effect
+                        # Print each character in bright white
                         for char in chunk:
                             print(f"{C.WHITE}{char}{C.RST}", end='', flush=True)
                         _token_count[0] += 1
-                    else:
-                        # No visible content yet - show animated thinking indicator
-                        if not _has_content[0]:
-                            # Create wave effect through "thinking" text
-                            animated = ""
-                            for i, char in enumerate(_thinking_text):
-                                if i == _thinking_idx[0]:
-                                    # Bright white for current position
-                                    animated += f"{C.WHITE}{char}{C.RST}"
-                                elif abs(i - _thinking_idx[0]) == 1 or (i == 0 and _thinking_idx[0] == len(_thinking_text) - 1) or (i == len(_thinking_text) - 1 and _thinking_idx[0] == 0):
-                                    # Slightly dimmed for adjacent positions
-                                    animated += f"{C.BPURPLE}{char}{C.RST}"
-                                else:
-                                    # Normal dim for rest
-                                    animated += f"{C.DIM}{char}{C.RST}"
-                            
-                            sys.stdout.write(f'\r  {animated} {C.DIM}[{est_tokens:,} tokens]{C.RST}')
-                            sys.stdout.flush()
                 
                 content, tool_calls = agent.PromptWithTools(full_prompt, streaming=True, on_chunk=on_chunk)
                 had_content = bool(content)
                 
-                # Clear thinking animation if no content was printed
+                # Stop animation and clear
+                _stop_animation[0] = True
+                time.sleep(0.2)
                 if not _has_content[0]:
                     sys.stdout.write('\r' + ' ' * 60 + '\r')
                 
