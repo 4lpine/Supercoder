@@ -166,6 +166,7 @@ def header() -> None:
         ("plan", "Generate requirements, design, and tasks for a project"),
         ("quit", "Exit supercoder"),
         ("status", "Show session status"),
+        ("supabase", "Enable/disable Supabase database (supabase on|off)"),
         ("task do", "Execute a specific task"),
         ("task done", "Mark a task as complete"),
         ("task next", "Execute next incomplete task"),
@@ -175,11 +176,12 @@ def header() -> None:
         ("unpin", "Unpin a file"),
         ("verbose", "Toggle verbose output - show full file contents (verbose on|off)"),
         ("verify", "Set verification mode (off|py_compile|<cmd>)"),
+        ("vision", "Configure vision model (local 2b/4b/8b/32b or api)"),
     ]
     for name, desc in cmds:
         print(f"  {_s(name.ljust(12), C.CYAN)} ─ {desc}")
     print()
-    print(_s("  Shortcuts: ", C.DIM) + "exit=quit, q=quit, tc=task done, td=task do, tl=tasks, tn=task next, tu=task undo")
+    print(_s("  Shortcuts: ", C.DIM) + "exit=quit, q=quit, tc=task done, td=task do, tl=tasks, tn=task next, tu=task undo, v=vision")
     print(_s("  Multiline: Start with <<< (end >>>) or \"\"\"", C.DIM))
     print()
 
