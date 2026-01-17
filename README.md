@@ -430,15 +430,15 @@ Project-specific files are stored in `.supercoder/`:
 │  ┌─────────────────────────────────────────────────────┐    │
 │  │              SuperCoder (Python)                    │    │
 │  │                                                     │    │
-│  │  • main.py (UI & orchestration)                    │    │
-│  │  • Agentic.py (AI interface)                       │    │
-│  │  • tools.py (file/shell tools)                     │    │
-│  │  • selenium_tools.py (browser automation)          │    │
-│  │  • vision_tools.py (UI analysis)                   │    │
-│  │  • supabase_tools.py (database)                    │    │
+│  │  • main.py (UI & orchestration)                     │    │
+│  │  • Agentic.py (AI interface)                        │    │
+│  │  • tools.py (file/shell tools)                      │    │
+│  │  • selenium_tools.py (browser automation)           │    │
+│  │  • vision_tools.py (UI analysis)                    │    │
+│  │  • supabase_tools.py (database)                     │    │
 │  │                                                     │    │
-│  │  Full access to your workspace                     │    │
-│  │  PowerShell/Bash for command execution             │    │
+│  │  Full access to your workspace                      │    │
+│  │  PowerShell/Bash for command execution              │    │
 │  └─────────────────────────────────────────────────────┘    │
 │                                                             │
 │  Python 3.8+ + dependencies                                 │
