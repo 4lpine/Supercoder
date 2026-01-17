@@ -1,0 +1,14 @@
+# Vision Model Dependencies
+# Install with: pip install -r requirements-vision.txt
+
+# For local Qwen3-VL models
+torch>=2.0.0
+transformers>=4.37.0
+qwen-vl-utils>=0.0.2
+accelerate>=0.25.0
+
+# For image processing
+Pillow>=10.1.0
+
+# Note: For GPU support, install CUDA-enabled PyTorch:
+# pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118

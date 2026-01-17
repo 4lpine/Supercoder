@@ -813,6 +813,70 @@ def cmd_models(state: State, agent: Agent, args: str) -> None:
     models = fetch_models()
     display_models(models, args.strip())
 
+
+@cmd("vision", "Configure vision model (local 2b/4b/8b/32b or api)", shortcuts=["v"])
+def cmd_vision(state: State, agent: Agent, args: str) -> None:
+    import vision_tools
+    
+    args = args.strip().lower()
+    
+    if not args or args == "status":
+        # Show current status
+        result = vision_tools.vision_get_status()
+        status(f"Vision Mode: {result['mode']}", "info")
+        
+        if result['mode'] == 'local':
+            status(f"Model: Qwen3-VL-{result['local_model'].upper()}-Instruct", "info")
+            status(f"Loaded: {result['local_model_loaded']}", "info")
+            if result.get('dependencies_installed'):
+                status(f"CUDA Available: {result.get('cuda_available', False)}", "info")
+                if result.get('cuda_available'):
+                    status(f"GPU: {result.get('gpu_name', 'Unknown')}", "info")
+                    status(f"GPU Memory: {result.get('gpu_memory_gb', 0)}GB", "info")
+            else:
+                status("Dependencies not installed: pip install torch transformers qwen-vl-utils", "warning")
+        else:
+            status("API: OpenRouter (Qwen3-VL)", "info")
+            status("Cost: ~$0.01-0.03 per image", "info")
+        return
+    
+    # Parse command
+    parts = args.split()
+    
+    if parts[0] == "local":
+        # vision local 2b/4b/8b/32b
+        model_size = parts[1] if len(parts) > 1 else "2b"
+        result = vision_tools.vision_set_mode("local", model_size)
+        
+        if "error" in result:
+            status(result["error"], "error")
+        else:
+            status(result["message"], "success")
+            if "note" in result:
+                status(result["note"], "info")
+    
+    elif parts[0] == "api":
+        # vision api
+        result = vision_tools.vision_set_mode("api")
+        
+        if "error" in result:
+            status(result["error"], "error")
+        else:
+            status(result["message"], "success")
+            if "note" in result:
+                status(result["note"], "info")
+    
+    else:
+        status("Usage: vision [local 2b/4b/8b/32b | api | status]", "error")
+        status("Examples:", "info")
+        status("  vision local 2b    - Use local Qwen3-VL 2B model", "info")
+        status("  vision local 4b    - Use local Qwen3-VL 4B model", "info")
+        status("  vision local 8b    - Use local Qwen3-VL 8B model", "info")
+        status("  vision local 32b   - Use local Qwen3-VL 32B model", "info")
+        status("  vision api         - Use OpenRouter API", "info")
+        status("  vision status      - Show current configuration", "info")
+
+
 @cmd("index", "Rebuild retrieval index")
 def cmd_index(state: State, agent: Agent, args: str) -> None:
     status("Building index...", "context")

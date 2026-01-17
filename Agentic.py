@@ -148,7 +148,27 @@ NATIVE_TOOLS = [
     {"type": "function", "function": {"name": "supabaseQuery", "description": "Execute a Supabase database query (requires 'supabase on' first)", "parameters": {"type": "object", "properties": {"table": {"type": "string", "description": "Table name"}, "operation": {"type": "string", "enum": ["select", "insert", "update", "delete"], "description": "Operation type"}, "filters": {"type": "object", "description": "Filter conditions"}, "data": {"type": "object", "description": "Data for insert/update"}, "columns": {"type": "string", "description": "Columns to select (default: *)"}}, "required": ["table"]}}},
     {"type": "function", "function": {"name": "supabaseListTables", "description": "List all tables in Supabase database", "parameters": {"type": "object", "properties": {}, "required": []}}},
     {"type": "function", "function": {"name": "supabaseGetSchema", "description": "Get schema information for a Supabase table", "parameters": {"type": "object", "properties": {"table": {"type": "string", "description": "Table name"}}, "required": ["table"]}}},
-    {"type": "function", "function": {"name": "supabaseCount", "description": "Count rows in a Supabase table", "parameters": {"type": "object", "properties": {"table": {"type": "string", "description": "Table name"}, "filters": {"type": "object", "description": "Optional filter conditions"}}, "required": ["table"]}}}
+    {"type": "function", "function": {"name": "supabaseCount", "description": "Count rows in a Supabase table", "parameters": {"type": "object", "properties": {"table": {"type": "string", "description": "Table name"}, "filters": {"type": "object", "description": "Optional filter conditions"}}, "required": ["table"]}}},
+    # Selenium Browser Automation Tools
+    {"type": "function", "function": {"name": "seleniumStartBrowser", "description": "Start a browser session for automation. Returns session_id to use in other selenium commands.", "parameters": {"type": "object", "properties": {"browser": {"type": "string", "enum": ["chrome", "firefox", "edge"], "description": "Browser type (default: chrome)"}, "headless": {"type": "boolean", "description": "Run without GUI (default: false)"}}, "required": []}}},
+    {"type": "function", "function": {"name": "seleniumCloseBrowser", "description": "Close a browser session", "parameters": {"type": "object", "properties": {"sessionId": {"type": "integer", "description": "Browser session ID"}}, "required": ["sessionId"]}}},
+    {"type": "function", "function": {"name": "seleniumListSessions", "description": "List all active browser sessions", "parameters": {"type": "object", "properties": {}, "required": []}}},
+    {"type": "function", "function": {"name": "seleniumNavigate", "description": "Navigate to a URL in the browser", "parameters": {"type": "object", "properties": {"sessionId": {"type": "integer", "description": "Browser session ID"}, "url": {"type": "string", "description": "URL to navigate to"}}, "required": ["sessionId", "url"]}}},
+    {"type": "function", "function": {"name": "seleniumClick", "description": "Click an element on the page", "parameters": {"type": "object", "properties": {"sessionId": {"type": "integer", "description": "Browser session ID"}, "selector": {"type": "string", "description": "Element selector"}, "selectorType": {"type": "string", "enum": ["css", "xpath", "id", "name", "class", "tag"], "description": "Selector type (default: css)"}}, "required": ["sessionId", "selector"]}}},
+    {"type": "function", "function": {"name": "seleniumType", "description": "Type text into an input field", "parameters": {"type": "object", "properties": {"sessionId": {"type": "integer", "description": "Browser session ID"}, "selector": {"type": "string", "description": "Element selector"}, "text": {"type": "string", "description": "Text to type"}, "selectorType": {"type": "string", "description": "Selector type (default: css)"}, "clearFirst": {"type": "boolean", "description": "Clear field before typing (default: true)"}}, "required": ["sessionId", "selector", "text"]}}},
+    {"type": "function", "function": {"name": "seleniumGetElement", "description": "Get element properties (text, attributes, location, size)", "parameters": {"type": "object", "properties": {"sessionId": {"type": "integer", "description": "Browser session ID"}, "selector": {"type": "string", "description": "Element selector"}, "selectorType": {"type": "string", "description": "Selector type (default: css)"}}, "required": ["sessionId", "selector"]}}},
+    {"type": "function", "function": {"name": "seleniumExecuteScript", "description": "Execute JavaScript in the browser", "parameters": {"type": "object", "properties": {"sessionId": {"type": "integer", "description": "Browser session ID"}, "script": {"type": "string", "description": "JavaScript code to execute"}}, "required": ["sessionId", "script"]}}},
+    {"type": "function", "function": {"name": "seleniumScreenshot", "description": "Take a screenshot of the browser. Saves to .supercoder/screenshots/ by default. Use this to capture UI for visual analysis.", "parameters": {"type": "object", "properties": {"sessionId": {"type": "integer", "description": "Browser session ID"}, "savePath": {"type": "string", "description": "Optional path to save screenshot"}, "elementSelector": {"type": "string", "description": "Optional CSS selector to screenshot specific element"}, "fullPage": {"type": "boolean", "description": "Capture entire scrollable page (default: false)"}}, "required": ["sessionId"]}}},
+    {"type": "function", "function": {"name": "seleniumWaitForElement", "description": "Wait for an element to appear on the page", "parameters": {"type": "object", "properties": {"sessionId": {"type": "integer", "description": "Browser session ID"}, "selector": {"type": "string", "description": "Element selector"}, "selectorType": {"type": "string", "description": "Selector type (default: css)"}, "timeout": {"type": "integer", "description": "Maximum wait time in seconds (default: 10)"}}, "required": ["sessionId", "selector"]}}},
+    {"type": "function", "function": {"name": "seleniumGetPageSource", "description": "Get the HTML source of the current page", "parameters": {"type": "object", "properties": {"sessionId": {"type": "integer", "description": "Browser session ID"}}, "required": ["sessionId"]}}},
+    # Vision Analysis Tools
+    {"type": "function", "function": {"name": "visionSetMode", "description": "Set vision model mode (local or api) and model size", "parameters": {"type": "object", "properties": {"mode": {"type": "string", "enum": ["local", "api"], "description": "Vision mode"}, "modelSize": {"type": "string", "enum": ["2b", "4b", "8b", "32b"], "description": "Model size for local mode"}}, "required": ["mode"]}}},
+    {"type": "function", "function": {"name": "visionGetStatus", "description": "Get current vision model configuration and status", "parameters": {"type": "object", "properties": {}, "required": []}}},
+    {"type": "function", "function": {"name": "visionAnalyzeUI", "description": "Analyze a UI screenshot for layout, elements, issues, and suggestions. Use this after taking a screenshot to understand what's on the page.", "parameters": {"type": "object", "properties": {"screenshotPath": {"type": "string", "description": "Path to screenshot file"}, "prompt": {"type": "string", "description": "Optional specific question about the UI"}}, "required": ["screenshotPath"]}}},
+    {"type": "function", "function": {"name": "visionFindElement", "description": "Find a UI element by visual description (e.g., 'blue login button')", "parameters": {"type": "object", "properties": {"screenshotPath": {"type": "string", "description": "Path to screenshot"}, "description": {"type": "string", "description": "Natural language description of element"}}, "required": ["screenshotPath", "description"]}}},
+    {"type": "function", "function": {"name": "visionVerifyLayout", "description": "Verify that expected UI elements are present and correctly positioned", "parameters": {"type": "object", "properties": {"screenshotPath": {"type": "string", "description": "Path to screenshot"}, "expectedElements": {"type": "array", "items": {"type": "string"}, "description": "List of elements that should be visible"}}, "required": ["screenshotPath", "expectedElements"]}}},
+    {"type": "function", "function": {"name": "visionAccessibilityCheck", "description": "Check UI screenshot for accessibility issues (contrast, text size, labels, etc.)", "parameters": {"type": "object", "properties": {"screenshotPath": {"type": "string", "description": "Path to screenshot"}}, "required": ["screenshotPath"]}}},
+    {"type": "function", "function": {"name": "visionCompareScreenshots", "description": "Compare two screenshots for visual differences (visual regression testing)", "parameters": {"type": "object", "properties": {"screenshot1Path": {"type": "string", "description": "Path to first screenshot (baseline)"}, "screenshot2Path": {"type": "string", "description": "Path to second screenshot (current)"}}, "required": ["screenshot1Path", "screenshot2Path"]}}}
 ]
 
 
@@ -615,6 +635,8 @@ def execute_tool(tool_call: dict) -> str:
         resolve_merge_conflict
     )
     import supabase_tools
+    import selenium_tools
+    import vision_tools
 
     name = tool_call["name"]
     args = tool_call.get("args", {})
@@ -811,6 +833,90 @@ def execute_tool(tool_call: dict) -> str:
             return json.dumps(supabase_tools.supabase_get_schema(args["table"]))
         elif name == "supabaseCount":
             return json.dumps(supabase_tools.supabase_count(args["table"], args.get("filters")))
+        # Selenium Browser Automation Tools
+        elif name == "seleniumStartBrowser":
+            return json.dumps(selenium_tools.selenium_start_browser(
+                args.get("browser", "chrome"),
+                args.get("headless", False)
+            ))
+        elif name == "seleniumCloseBrowser":
+            return json.dumps(selenium_tools.selenium_close_browser(args["sessionId"]))
+        elif name == "seleniumListSessions":
+            return json.dumps(selenium_tools.selenium_list_sessions())
+        elif name == "seleniumNavigate":
+            return json.dumps(selenium_tools.selenium_navigate(args["sessionId"], args["url"]))
+        elif name == "seleniumClick":
+            return json.dumps(selenium_tools.selenium_click(
+                args["sessionId"],
+                args["selector"],
+                args.get("selectorType", "css")
+            ))
+        elif name == "seleniumType":
+            return json.dumps(selenium_tools.selenium_type(
+                args["sessionId"],
+                args["selector"],
+                args["text"],
+                args.get("selectorType", "css"),
+                args.get("clearFirst", True)
+            ))
+        elif name == "seleniumGetElement":
+            return json.dumps(selenium_tools.selenium_get_element(
+                args["sessionId"],
+                args["selector"],
+                args.get("selectorType", "css")
+            ))
+        elif name == "seleniumExecuteScript":
+            return json.dumps(selenium_tools.selenium_execute_script(
+                args["sessionId"],
+                args["script"]
+            ))
+        elif name == "seleniumScreenshot":
+            return json.dumps(selenium_tools.selenium_screenshot(
+                args["sessionId"],
+                args.get("savePath"),
+                args.get("elementSelector"),
+                args.get("fullPage", False)
+            ))
+        elif name == "seleniumWaitForElement":
+            return json.dumps(selenium_tools.selenium_wait_for_element(
+                args["sessionId"],
+                args["selector"],
+                args.get("selectorType", "css"),
+                args.get("timeout", 10)
+            ))
+        elif name == "seleniumGetPageSource":
+            return json.dumps(selenium_tools.selenium_get_page_source(args["sessionId"]))
+        # Vision Analysis Tools
+        elif name == "visionSetMode":
+            return json.dumps(vision_tools.vision_set_mode(
+                args["mode"],
+                args.get("modelSize", "2b")
+            ))
+        elif name == "visionGetStatus":
+            return json.dumps(vision_tools.vision_get_status())
+        elif name == "visionAnalyzeUI":
+            return json.dumps(vision_tools.vision_analyze_ui(
+                args["screenshotPath"],
+                args.get("prompt")
+            ))
+        elif name == "visionFindElement":
+            return json.dumps(vision_tools.vision_find_element(
+                args["screenshotPath"],
+                args["description"]
+            ))
+        elif name == "visionVerifyLayout":
+            return json.dumps(vision_tools.vision_verify_layout(
+                args["screenshotPath"],
+                args["expectedElements"]
+            ))
+        elif name == "visionAccessibilityCheck":
+            return json.dumps(vision_tools.vision_accessibility_check(args["screenshotPath"]))
+        elif name == "visionCompareScreenshots":
+            return json.dumps(vision_tools.vision_compare_screenshots(
+                args["screenshot1Path"],
+                args["screenshot2Path"]
+            ))
+
         else:
             return f"Unknown tool: {name}"
     except Exception as e:
