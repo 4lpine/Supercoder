@@ -1163,37 +1163,54 @@ def run(agent: Agent, state: State) -> None:
                     break
                 state.auto_steps += 1
                 
-                # Live token counter during streaming
+                # Live token counter during streaming with animated thinking indicator
                 _stream_chars = [0]
                 _has_content = [False]
-                _spinner = ['|', '/', '-', '\\']
-                _spin_idx = [0]
+                _thinking_text = "thinking"
+                _thinking_idx = [0]
+                _token_count = [0]
                 
                 def on_chunk(chunk: str):
                     _stream_chars[0] += len(chunk)
                     est_tokens = _stream_chars[0] // 4
-                    _spin_idx[0] = (_spin_idx[0] + 1) % 4
+                    _thinking_idx[0] = (_thinking_idx[0] + 1) % len(_thinking_text)
                     
                     if chunk.strip():
                         # Has visible content - print it
                         if not _has_content[0]:
-                            # First content - clear the spinner line
-                            sys.stdout.write('\r' + ' ' * 40 + '\r')
+                            # First content - clear the thinking animation
+                            sys.stdout.write('\r' + ' ' * 60 + '\r')
                             _has_content[0] = True
-                        print(chunk, end='', flush=True)
+                        
+                        # Print each token with a brief highlight effect
+                        for char in chunk:
+                            print(f"{C.WHITE}{char}{C.RST}", end='', flush=True)
+                        _token_count[0] += 1
                     else:
-                        # No visible content yet - show spinner with token count
+                        # No visible content yet - show animated thinking indicator
                         if not _has_content[0]:
-                            spinner = _spinner[_spin_idx[0]]
-                            sys.stdout.write(f'\r  {C.DIM}{spinner} {est_tokens:,} tokens...{C.RST}')
+                            # Create wave effect through "thinking" text
+                            animated = ""
+                            for i, char in enumerate(_thinking_text):
+                                if i == _thinking_idx[0]:
+                                    # Bright white for current position
+                                    animated += f"{C.WHITE}{char}{C.RST}"
+                                elif abs(i - _thinking_idx[0]) == 1 or (i == 0 and _thinking_idx[0] == len(_thinking_text) - 1) or (i == len(_thinking_text) - 1 and _thinking_idx[0] == 0):
+                                    # Slightly dimmed for adjacent positions
+                                    animated += f"{C.BPURPLE}{char}{C.RST}"
+                                else:
+                                    # Normal dim for rest
+                                    animated += f"{C.DIM}{char}{C.RST}"
+                            
+                            sys.stdout.write(f'\r  {animated} {C.DIM}[{est_tokens:,} tokens]{C.RST}')
                             sys.stdout.flush()
                 
                 content, tool_calls = agent.PromptWithTools(full_prompt, streaming=True, on_chunk=on_chunk)
                 had_content = bool(content)
                 
-                # Clear spinner if no content was printed
+                # Clear thinking animation if no content was printed
                 if not _has_content[0]:
-                    sys.stdout.write('\r' + ' ' * 40 + '\r')
+                    sys.stdout.write('\r' + ' ' * 60 + '\r')
                 
                 # Show final token count
                 est_tokens = _stream_chars[0] // 4
