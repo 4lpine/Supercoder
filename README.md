@@ -29,8 +29,7 @@ That's it. The installer handles everything:
 
 - ✅ Checks Python is installed
 - ✅ Downloads SuperCoder from GitHub
-- ✅ Installs Python dependencies
-- ✅ Optionally sets up Docker for containerized mode
+- ✅ Installs Python dependencies (requests, colorama)
 - ✅ Creates the `supercoder` command
 - ✅ Adds it to your PATH
 
@@ -44,43 +43,15 @@ supercoder
 
 - **Windows 10/11**
 - **Python 3.8+** (required)
-- **Docker Desktop** (optional, for Docker mode)
-
-### Execution Modes
-
-SuperCoder supports two execution modes:
-
-| Mode | Command | Description |
-|------|---------|-------------|
-| **Native** (default) | `supercoder` | Runs directly on Windows with Python |
-| **Docker** | `supercoder-docker` | Runs in isolated Linux container |
-
-You can also toggle Docker mode from within SuperCoder:
-```
-docker on   # Enable Docker mode
-docker off  # Disable Docker mode (native)
-docker      # Show current mode
-```
-
-**When to use Docker mode:**
-- Running untrusted code in isolation
-- Need Linux-specific tools
-- Want consistent environment across machines
-
-**When to use Native mode:**
-- Running GUI applications (pygame, tkinter, etc.)
-- Faster startup time
-- No Docker installation required
 
 ### Updating
 
-Just run `installer.exe` again. It will download the latest version and rebuild everything.
+Just run `installer.exe` again. It will download the latest version.
 
 ### Uninstalling
 
 1. Delete the install folder (default: `C:\Users\YourName\supercoder`)
 2. Remove the `bin` folder from your PATH (System Properties → Environment Variables)
-3. Optionally remove the Docker image: `docker rmi supercoder:latest`
 
 ---
 
@@ -119,20 +90,16 @@ You describe what you want in plain English, and SuperCoder figures out how to b
 
 ### How It Works
 
-SuperCoder can run in two modes:
+SuperCoder runs as a Python application directly on your Windows machine. When you launch it, your current folder becomes the workspace where the agent can read, write, and execute commands.
 
-**Native Mode (Default):**
-- Runs directly on Windows with Python
-- Full access to your system (can run GUI apps, access all drives)
-- Faster startup, no Docker required
+**What happens when you run SuperCoder:**
+1. Loads your API tokens from `~/.supercoder/tokens.txt`
+2. Connects to OpenRouter API (or uses free models via g4f)
+3. Gives the AI agent access to your workspace through tools
+4. Streams responses with live token counting
+5. Automatically verifies Python code after edits
 
-**Docker Mode:**
-- Runs inside a Linux container
-- Isolated environment (can't mess up your system)
-- Access to Linux tools (grep, sed, git, etc.)
-- Use `runOnHost` tool to run GUI apps on Windows
-
-When you launch SuperCoder, your current folder is accessible to the agent. Your API tokens and settings persist between sessions in `~/.supercoder/`.
+Your API tokens and command history persist between sessions in `~/.supercoder/`.
 
 ---
 
@@ -167,10 +134,8 @@ C:\Projects\myapp> supercoder
 | `help` | Show all commands |
 | `status` | Show session info (model, tokens used, settings) |
 | `model <name>` | Switch AI model |
-| `models` | List all available models |
-| `freemodels` | List free models (no API key needed) |
+| `models` | List available OpenRouter models |
 | `tokens` | Add/manage API keys |
-| `docker` | Toggle Docker mode (on/off) |
 | `cd <path>` | Change directory |
 | `clear` | Clear conversation history |
 | `quit` | Exit SuperCoder |
@@ -224,16 +189,15 @@ SuperCoder supports multiple AI providers:
 
 ### Free Models (No API Key)
 
-These work out of the box via g4f:
+SuperCoder works with OpenRouter's free tier models. Just run `supercoder` and start coding - no API key needed for these:
 
-- `gpt-4o-mini` - Fast, good for simple tasks
-- `claude-3-haiku` - Quick responses
-- `llama-3.1-70b` - Open source, capable
-- And many more... (run `freemodels` to see all)
+- `mistralai/devstral-2512:free` - Free, optimized for coding (default)
+- `qwen/qwen3-coder:free` - Fast, good for simple tasks
+- And more... (run `models` command to see all)
 
-### OpenRouter Models (API Key Required)
+### OpenRouter Models (API Key Recommended)
 
-For better performance, add an OpenRouter API key:
+For better performance and more options, add an OpenRouter API key:
 
 1. Get a key from [openrouter.ai](https://openrouter.ai)
 2. Run `tokens` command and paste your key
@@ -242,7 +206,8 @@ For better performance, add an OpenRouter API key:
 Popular choices:
 - `anthropic/claude-sonnet-4` - Best for complex coding
 - `openai/gpt-4o` - Great all-around
-- `mistralai/devstral-2512:free` - Free, good for coding
+- `qwen/qwen3-235b-a22b` - Powerful reasoning
+- `deepseek/deepseek-v3.2` - Excellent for code
 - `google/gemini-2.0-flash-001` - Fast and capable
 
 ---
@@ -268,8 +233,7 @@ SuperCoder has access to these tools:
 - `findReferences` - Find all uses of a symbol
 
 ### Shell & System
-- `executePwsh` - Run shell commands
-- `runOnHost` - Run commands on Windows host (Docker mode only, for GUI apps)
+- `executePwsh` - Run shell commands (PowerShell on Windows)
 - `controlPwshProcess` - Start/stop background processes
 - `systemInfo` - Get OS and environment info
 
@@ -327,31 +291,29 @@ Project-specific tasks are stored in `.supercoder/tasks.md` in your project fold
 ┌─────────────────────────────────────────────────────────────┐
 │                     Your Windows Machine                    │
 │                                                             │
-│  C:\Projects\myapp\  ←──────────────────────┐               │
-│                                             │               │
-│  ┌─────────────────────────────────────────┐│               │
-│  │           Docker Container              ││               │
-│  │                                         ││               │
-│  │  ┌─────────────────────────────────┐    ││               │
-│  │  │         SuperCoder              │    ││  mounted as   │
-│  │  │                                 │    ││  /workspace   │
-│  │  │  • main.py (UI & orchestration) │    ││               │
-│  │  │  • Agentic.py (AI interface)    │    │◄───────────────┘
-│  │  │  • tools.py (file/shell tools)  │    │                │
-│  │  │                                 │    │                │
-│  │  └─────────────────────────────────┘    │                │
-│  │                                         │                │
-│  │  Python 3.12 + dependencies             │                │
-│  │  Linux (Debian)                         │                │
-│  └─────────────────────────────────────────┘                │
+│  C:\Projects\myapp\  (your workspace)                       │
+│                                                             │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │              SuperCoder (Python)                    │    │
+│  │                                                     │    │
+│  │  • main.py (UI & orchestration)                    │    │
+│  │  • Agentic.py (AI interface)                       │    │
+│  │  • tools.py (file/shell tools)                     │    │
+│  │                                                     │    │
+│  │  Runs directly on Windows                          │    │
+│  │  Full access to your workspace                     │    │
+│  │  PowerShell for command execution                  │    │
+│  └─────────────────────────────────────────────────────┘    │
+│                                                             │
+│  Python 3.8+ + dependencies (requests, colorama)            │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ### Components
 
-- **main.py** - Terminal UI, command handling, prompt building
-- **Agentic.py** - AI model interface (OpenRouter, g4f), tool calling
-- **tools.py** - File operations, shell execution, code analysis
+- **main.py** - Terminal UI, command handling, prompt building, live token counter
+- **Agentic.py** - AI model interface (OpenRouter), tool calling, response streaming
+- **tools.py** - File operations, shell execution, code analysis, undo system
 - **Agents/*.md** - System prompts for different agent modes
 
 ---
@@ -393,20 +355,17 @@ Then use `task next` to execute each step.
 
 ## Troubleshooting
 
-### "Docker is not running"
-Start Docker Desktop from the Start menu and wait for it to fully load (whale icon in system tray).
-
 ### "SuperCoder not installed"
-Run `installer.exe` again to rebuild the Docker image.
-
-### Slow first startup
-The first run downloads the Python base image (~150MB). Subsequent runs are instant.
-
-### Can't type after task completes
-This was a bug that's been fixed. Run `installer.exe` to update.
+Run `installer.exe` to install SuperCoder.
 
 ### Commands not found after install
 Open a **new** terminal window. The PATH update only affects new terminals.
+
+### Model errors or rate limits
+If you see API errors, try switching models with `model <name>` or add your own OpenRouter API key with the `tokens` command.
+
+### Python not found
+Install Python 3.8+ from [python.org](https://python.org) and make sure it's added to PATH during installation.
 
 ---
 
@@ -429,6 +388,5 @@ MIT License - do whatever you want with it.
 
 Built with:
 - [OpenRouter](https://openrouter.ai) - AI model access
-- [g4f](https://github.com/xtekky/gpt4free) - Free model access
-- [Docker](https://docker.com) - Containerization
 - [Python](https://python.org) - Everything else
+- [Colorama](https://pypi.org/project/colorama/) - Terminal colors
