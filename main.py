@@ -863,6 +863,48 @@ def cmd_tokens(state: State, agent: Agent, args: str) -> None:
     TokenManager.load_tokens()
     status(f"Saved {len(new_tokens)} token(s) globally", "success")
 
+@cmd("supabase", "Enable/disable Supabase database integration (supabase on|off)")
+def cmd_supabase(state: State, agent: Agent, args: str) -> None:
+    import supabase_tools
+    
+    parts = args.lower().split()
+    
+    if not parts or parts[0] == "status":
+        if supabase_tools.is_supabase_enabled():
+            status("Supabase is ENABLED", "success")
+        else:
+            status("Supabase is DISABLED", "info")
+        return
+    
+    if parts[0] == "on":
+        # Try to initialize with env vars or provided credentials
+        if len(parts) >= 3:
+            # supabase on <url> <key>
+            result = supabase_tools.init_supabase(parts[1], parts[2])
+        else:
+            result = supabase_tools.init_supabase()
+        
+        if "error" in result:
+            status(result["error"], "error")
+            if "install_command" in result:
+                print(f"  {C.YELLOW}Install: {result['install_command']}{C.RST}")
+            if "example" in result:
+                print(f"  {C.GRAY}Example: {result['example']}{C.RST}")
+        else:
+            status(result["message"], "success")
+            print(f"  {C.GRAY}URL: {result['url']}{C.RST}")
+    
+    elif parts[0] == "off":
+        result = supabase_tools.disable_supabase()
+        status(result["message"], "info")
+    
+    else:
+        status("Usage: supabase on|off|status", "warning")
+        print(f"  {C.GRAY}Enable:  supabase on{C.RST}")
+        print(f"  {C.GRAY}Disable: supabase off{C.RST}")
+        print(f"  {C.GRAY}Status:  supabase status{C.RST}")
+        print(f"  {C.GRAY}With credentials: supabase on <url> <key>{C.RST}")
+
 @cmd("quit", "Exit supercoder", shortcuts=["exit", "q"])
 def cmd_quit(state: State, agent: Agent, args: str) -> None:
     print(f"\n  {C.BPURPLE}Goodbye!{C.RST}\n")

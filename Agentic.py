@@ -135,8 +135,22 @@ NATIVE_TOOLS = [
     {"type": "function", "function": {"name": "getEnvironmentVariable", "description": "Get environment variable value", "parameters": {"type": "object", "properties": {"name": {"type": "string", "description": "Variable name"}, "default": {"type": "string", "description": "Default if not found"}}, "required": ["name"]}}},
     {"type": "function", "function": {"name": "validateJson", "description": "Validate JSON file and return detailed error information if invalid", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "Path to JSON file"}}, "required": ["path"]}}},
     {"type": "function", "function": {"name": "countLines", "description": "Count lines, words, characters in a file. Useful before reading large files.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "Path to file"}}, "required": ["path"]}}},
-    {"type": "function", "function": {"name": "backupFile", "description": "Create a backup copy of a file before modifying it", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "Path to file"}, "backupSuffix": {"type": "string", "description": "Backup suffix (default: .bak)"}}, "required": ["path"]}}}
+    {"type": "function", "function": {"name": "backupFile", "description": "Create a backup copy of a file before modifying it", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "Path to file"}, "backupSuffix": {"type": "string", "description": "Backup suffix (default: .bak)"}}, "required": ["path"]}}},
+    {"type": "function", "function": {"name": "generateTests", "description": "Auto-generate unit tests for a Python file", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "Path to source file"}, "testFramework": {"type": "string", "description": "Test framework (pytest, unittest)"}, "coverage": {"type": "boolean", "description": "Include coverage annotations"}}, "required": ["path"]}}},
+    {"type": "function", "function": {"name": "analyzeTestCoverage", "description": "Analyze test coverage for Python files", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "Path to analyze (default: .)"}}, "required": []}}},
+    {"type": "function", "function": {"name": "setBreakpointTrace", "description": "Insert a breakpoint/trace statement in code for debugging", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "Path to file"}, "lineNumber": {"type": "integer", "description": "Line number to insert breakpoint"}, "condition": {"type": "string", "description": "Optional condition for conditional breakpoint"}}, "required": ["path", "lineNumber"]}}},
+    {"type": "function", "function": {"name": "removeBreakpoints", "description": "Remove all SuperCoder breakpoints from a file", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "Path to file"}}, "required": ["path"]}}},
+    {"type": "function", "function": {"name": "analyzeStackTrace", "description": "Analyze a Python stack trace and extract useful debugging information", "parameters": {"type": "object", "properties": {"errorOutput": {"type": "string", "description": "The error/stack trace text"}}, "required": ["errorOutput"]}}},
+    {"type": "function", "function": {"name": "renameSymbol", "description": "Rename a symbol (function, class, variable) across multiple files", "parameters": {"type": "object", "properties": {"symbol": {"type": "string", "description": "Current symbol name"}, "newName": {"type": "string", "description": "New symbol name"}, "path": {"type": "string", "description": "Root directory (default: .)"}, "filePattern": {"type": "string", "description": "File pattern (default: *.py)"}}, "required": ["symbol", "newName"]}}},
+    {"type": "function", "function": {"name": "generateCommitMessage", "description": "Generate a descriptive commit message based on git diff", "parameters": {"type": "object", "properties": {"staged": {"type": "boolean", "description": "Generate for staged changes (default: true)"}}, "required": []}}},
+    {"type": "function", "function": {"name": "createPullRequest", "description": "Create a pull request using GitHub CLI", "parameters": {"type": "object", "properties": {"title": {"type": "string", "description": "PR title"}, "body": {"type": "string", "description": "PR description"}, "base": {"type": "string", "description": "Base branch (default: main)"}, "head": {"type": "string", "description": "Head branch (default: current)"}}, "required": ["title"]}}},
+    {"type": "function", "function": {"name": "resolveMergeConflict", "description": "Attempt to resolve merge conflicts in a file", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "Path to file with conflicts"}, "strategy": {"type": "string", "enum": ["ours", "theirs", "both"], "description": "Resolution strategy"}}, "required": ["path"]}}},
+    {"type": "function", "function": {"name": "supabaseQuery", "description": "Execute a Supabase database query (requires 'supabase on' first)", "parameters": {"type": "object", "properties": {"table": {"type": "string", "description": "Table name"}, "operation": {"type": "string", "enum": ["select", "insert", "update", "delete"], "description": "Operation type"}, "filters": {"type": "object", "description": "Filter conditions"}, "data": {"type": "object", "description": "Data for insert/update"}, "columns": {"type": "string", "description": "Columns to select (default: *)"}}, "required": ["table"]}}},
+    {"type": "function", "function": {"name": "supabaseListTables", "description": "List all tables in Supabase database", "parameters": {"type": "object", "properties": {}, "required": []}}},
+    {"type": "function", "function": {"name": "supabaseGetSchema", "description": "Get schema information for a Supabase table", "parameters": {"type": "object", "properties": {"table": {"type": "string", "description": "Table name"}}, "required": ["table"]}}},
+    {"type": "function", "function": {"name": "supabaseCount", "description": "Count rows in a Supabase table", "parameters": {"type": "object", "properties": {"table": {"type": "string", "description": "Table name"}, "filters": {"type": "object", "description": "Optional filter conditions"}}, "required": ["table"]}}}
 ]
+
 
 # Model context limits
 MODEL_LIMITS = {
@@ -593,8 +607,14 @@ def execute_tool(tool_call: dict) -> str:
         insert_lines, remove_lines, move_file, copy_file, create_directory, undo,
         get_symbols, find_references, file_diff, http_request, download_file,
         system_info, run_tests, format_code, web_search, search_stackoverflow,
-        interact_with_user, finish
+        interact_with_user, finish,
+        get_file_info, list_directory_tree, replace_multiple, git_status, git_diff,
+        find_in_file, get_environment_variable, validate_json, count_lines, backup_file,
+        generate_tests, analyze_test_coverage, set_breakpoint_trace, remove_breakpoints,
+        analyze_stack_trace, rename_symbol, generate_commit_message, create_pull_request,
+        resolve_merge_conflict
     )
+    import supabase_tools
 
     name = tool_call["name"]
     args = tool_call.get("args", {})
@@ -743,6 +763,54 @@ def execute_tool(tool_call: dict) -> str:
             return json.dumps(interact_with_user(args["message"], args.get("interactionType", "info")))
         elif name == "finish":
             return json.dumps(finish(args["summary"], args.get("status", "complete")))
+        # New tools
+        elif name == "getFileInfo":
+            return json.dumps(get_file_info(args["path"]))
+        elif name == "listDirectoryTree":
+            return json.dumps(list_directory_tree(args.get("path", "."), args.get("maxDepth", 3), args.get("ignorePatterns")))
+        elif name == "replaceMultiple":
+            return json.dumps(replace_multiple(args["path"], args["replacements"]))
+        elif name == "gitStatus":
+            return json.dumps(git_status())
+        elif name == "gitDiff":
+            return json.dumps(git_diff(args.get("path"), args.get("staged", False)))
+        elif name == "findInFile":
+            return json.dumps(find_in_file(args["path"], args["pattern"], args.get("contextLines", 2), args.get("caseSensitive", False)))
+        elif name == "getEnvironmentVariable":
+            return json.dumps(get_environment_variable(args["name"], args.get("default")))
+        elif name == "validateJson":
+            return json.dumps(validate_json(args["path"]))
+        elif name == "countLines":
+            return json.dumps(count_lines(args["path"]))
+        elif name == "backupFile":
+            return json.dumps(backup_file(args["path"], args.get("backupSuffix", ".bak")))
+        elif name == "generateTests":
+            return json.dumps(generate_tests(args["path"], args.get("testFramework", "pytest"), args.get("coverage", True)))
+        elif name == "analyzeTestCoverage":
+            return json.dumps(analyze_test_coverage(args.get("path", ".")))
+        elif name == "setBreakpointTrace":
+            return json.dumps(set_breakpoint_trace(args["path"], args["lineNumber"], args.get("condition")))
+        elif name == "removeBreakpoints":
+            return json.dumps(remove_breakpoints(args["path"]))
+        elif name == "analyzeStackTrace":
+            return json.dumps(analyze_stack_trace(args["errorOutput"]))
+        elif name == "renameSymbol":
+            return json.dumps(rename_symbol(args["symbol"], args["newName"], args.get("path", "."), args.get("filePattern", "*.py")))
+        elif name == "generateCommitMessage":
+            return json.dumps(generate_commit_message(args.get("staged", True)))
+        elif name == "createPullRequest":
+            return json.dumps(create_pull_request(args["title"], args.get("body", ""), args.get("base", "main"), args.get("head")))
+        elif name == "resolveMergeConflict":
+            return json.dumps(resolve_merge_conflict(args["path"], args.get("strategy", "ours")))
+        # Supabase tools
+        elif name == "supabaseQuery":
+            return json.dumps(supabase_tools.supabase_query(args["table"], args.get("operation", "select"), args.get("filters"), args.get("data"), args.get("columns", "*")))
+        elif name == "supabaseListTables":
+            return json.dumps(supabase_tools.supabase_list_tables())
+        elif name == "supabaseGetSchema":
+            return json.dumps(supabase_tools.supabase_get_schema(args["table"]))
+        elif name == "supabaseCount":
+            return json.dumps(supabase_tools.supabase_count(args["table"], args.get("filters")))
         else:
             return f"Unknown tool: {name}"
     except Exception as e:
