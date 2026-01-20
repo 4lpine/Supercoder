@@ -13,6 +13,7 @@ import subprocess
 import time
 import threading
 import requests
+import concurrent.futures
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
@@ -359,6 +360,7 @@ class State:
     recent_reads: List[str] = field(default_factory=list)
     recent_writes: List[str] = field(default_factory=list)
     current_task_num: int = 0
+    consecutive_talk_without_action: int = 0
 
     def reset_task(self) -> None:
         self.task = ""
@@ -367,6 +369,7 @@ class State:
         self.recent_writes.clear()
         self.verify_summary = ""
         self.verify_detail = ""
+        self.consecutive_talk_without_action = 0
 
 def _push_unique(lst: List[str], item: str, cap: int = MAX_RECENT_ITEMS) -> None:
     if item and item in lst:
@@ -589,12 +592,18 @@ def build_continue_prompt(state: State, last_tools: List[str], had_content: bool
     # Build the prompt
     context = "\n".join(parts)
     
-    # Special handling for background processes - check this FIRST
-    if last_tools and "controlPwshProcess" in last_tools:
+    # Check if ANY background processes are running (not just this turn!)
+    from tools import _background_processes
+    running_processes = [pid for pid, proc in _background_processes.items() if proc.poll() is None]
+    
+    # Special handling for background processes - check ALWAYS, not just when controlPwshProcess was called
+    if running_processes or (last_tools and "controlPwshProcess" in last_tools):
+        process_info = f" (Process IDs: {running_processes})" if running_processes else ""
         return f"""Context:
 {context}
 
-IMPORTANT: You just started a background process which is now running independently. Do NOT wait for it to complete.
+IMPORTANT: You have background process(es) running{process_info}. These are running independently (like dev servers).
+Do NOT wait for them to complete. Do NOT check their status repeatedly.
 
 Continue immediately with the next step of your task."""
     
@@ -637,6 +646,57 @@ def _quote_arg(arg: str) -> str:
     if ' ' in arg or '"' in arg:
         return f'"{arg}"'
     return arg
+
+# ==============================================================================
+# Threaded Tool Execution
+# ==============================================================================
+
+def execute_tool_with_timeout(tc: Dict[str, Any], timeout: int = 60) -> str:
+    """
+    Execute a tool with a timeout to prevent hangs.
+    
+    Args:
+        tc: Tool call dict with name, args, id
+        timeout: Maximum execution time in seconds (default 60)
+    
+    Returns:
+        Tool result as string, or error message if timeout
+    """
+    name = tc.get("name", "unknown")
+    
+    # Special tools that should never timeout (user interaction)
+    no_timeout_tools = {"finish", "interactWithUser", "requestUserCommand"}
+    if name in no_timeout_tools:
+        return execute_tool(tc)
+    
+    # Tools that need longer timeouts
+    long_timeout_tools = {
+        "executePwsh": 120,
+        "runTests": 300,
+        "analyzeTestCoverage": 180,
+        "webSearch": 30,
+        "searchStackOverflow": 30,
+        "httpRequest": 60,
+        "downloadFile": 120,
+    }
+    
+    # Adjust timeout based on tool
+    actual_timeout = long_timeout_tools.get(name, timeout)
+    
+    # Execute in thread with timeout
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(execute_tool, tc)
+        try:
+            result = future.result(timeout=actual_timeout)
+            return result
+        except concurrent.futures.TimeoutError:
+            error_msg = f"Tool '{name}' timed out after {actual_timeout} seconds. The operation was cancelled to prevent hanging."
+            status(f"Tool timeout: {name} ({actual_timeout}s)", "warning")
+            return json.dumps({"error": error_msg, "timeout": True})
+        except Exception as e:
+            error_msg = f"Tool '{name}' failed with error: {str(e)}"
+            status(f"Tool error: {name}", "error")
+            return json.dumps({"error": error_msg})
 
 # ==============================================================================
 # Prompt Loading
@@ -1013,75 +1073,6 @@ def cmd_tokens(state: State, agent: Agent, args: str) -> None:
     TokenManager.load_tokens()
     status(f"Saved {len(new_tokens)} token(s) globally", "success")
 
-@cmd("supabase", "Enable/disable Supabase database integration (supabase on|off)")
-def cmd_supabase(state: State, agent: Agent, args: str) -> None:
-    import supabase_tools
-    
-    parts = args.lower().split()
-    
-    if not parts or parts[0] == "status":
-        if supabase_tools.is_supabase_enabled():
-            status("Supabase is ENABLED", "success")
-        else:
-            status("Supabase is DISABLED", "info")
-        return
-    
-    if parts[0] == "on":
-        # Try to initialize with env vars or provided credentials
-        if len(parts) >= 3:
-            # supabase on <url> <key>
-            url = parts[1]
-            key = parts[2]
-            result = supabase_tools.init_supabase(url, key)
-        else:
-            result = supabase_tools.init_supabase()
-            url = None
-            key = None
-        
-        if "error" in result:
-            status(result["error"], "error")
-            if "install_command" in result:
-                print(f"  {C.YELLOW}Install: {result['install_command']}{C.RST}")
-            if "example" in result:
-                print(f"  {C.GRAY}Example: {result['example']}{C.RST}")
-        else:
-            status(result["message"], "success")
-            print(f"  {C.GRAY}URL: {result['url']}{C.RST}")
-            
-            # Check if we're in a project directory and offer to create .env.local
-            if url and key:
-                cwd = Path.cwd()
-                # Check for common project indicators
-                has_package_json = (cwd / "package.json").exists()
-                has_next_config = (cwd / "next.config.js").exists() or (cwd / "next.config.ts").exists()
-                has_env_example = (cwd / ".env.local.example").exists() or (cwd / ".env.example").exists()
-                
-                if has_package_json or has_next_config or has_env_example:
-                    env_file = cwd / ".env.local"
-                    if not env_file.exists():
-                        print(f"\n  {C.BYELLOW}Detected project directory. Create .env.local with Supabase credentials?{C.RST}")
-                        response = input(f"  {C.BPURPLE}╰─▸{C.RST} {C.GRAY}(y/n){C.RST} ")
-                        if response.lower() in ('y', 'yes', ''):
-                            env_content = f"""# Supabase Configuration
-NEXT_PUBLIC_SUPABASE_URL={url}
-NEXT_PUBLIC_SUPABASE_ANON_KEY={key}
-"""
-                            env_file.write_text(env_content)
-                            status(f"Created .env.local with Supabase credentials", "success")
-                    else:
-                        print(f"  {C.GRAY}Note: .env.local already exists{C.RST}")
-    
-    elif parts[0] == "off":
-        result = supabase_tools.disable_supabase()
-        status(result["message"], "info")
-    
-    else:
-        status("Usage: supabase on|off|status", "warning")
-        print(f"  {C.GRAY}Enable:  supabase on{C.RST}")
-        print(f"  {C.GRAY}Disable: supabase off{C.RST}")
-        print(f"  {C.GRAY}Status:  supabase status{C.RST}")
-        print(f"  {C.GRAY}With credentials: supabase on <url> <key>{C.RST}")
-
 @cmd("quit", "Exit supercoder", shortcuts=["exit", "q"])
 def cmd_quit(state: State, agent: Agent, args: str) -> None:
     print(f"\n  {C.BPURPLE}Goodbye!{C.RST}\n")
@@ -1223,10 +1214,12 @@ def _verify_writes(state: State) -> None:
 
 _last_interrupt: float = 0.0
 _INTERRUPT_WINDOW: float = 2.0
+_global_stop_animations: bool = False
 
 def run(agent: Agent, state: State) -> None:
-    global _last_interrupt
+    global _last_interrupt, _global_stop_animations
     import time as _time
+    
     header()
     status(f"Working directory: {os.getcwd()}", "info")
     status("Type 'help' for commands, 'plan' to start a new project", "info")
@@ -1281,30 +1274,47 @@ def run(agent: Agent, state: State) -> None:
                 _thinking_idx = [0]
                 _token_count = [0]
                 _stop_animation = [False]
+                _line_count = [0]  # Track stream line count
                 
                 # Animated thinking indicator in background thread
                 def animate_thinking():
-                    while not _stop_animation[0] and not _has_content[0]:
-                        animated = ""
-                        for i, char in enumerate(_thinking_text):
-                            if i == _thinking_idx[0]:
-                                animated += f"{C.WHITE}{char}{C.RST}"
-                            elif abs(i - _thinking_idx[0]) == 1 or (i == 0 and _thinking_idx[0] == len(_thinking_text) - 1) or (i == len(_thinking_text) - 1 and _thinking_idx[0] == 0):
-                                animated += f"{C.BPURPLE}{char}{C.RST}"
-                            else:
-                                animated += f"{C.DIM}{char}{C.RST}"
-                        
-                        sys.stdout.write(f'\r  {animated}')
-                        sys.stdout.flush()
-                        _thinking_idx[0] = (_thinking_idx[0] + 1) % len(_thinking_text)
-                        time.sleep(0.15)
+                    try:
+                        while not _stop_animation[0] and not _has_content[0] and not _global_stop_animations:
+                            animated = ""
+                            for i, char in enumerate(_thinking_text):
+                                if i == _thinking_idx[0]:
+                                    animated += f"{C.WHITE}{char}{C.RST}"
+                                elif abs(i - _thinking_idx[0]) == 1 or (i == 0 and _thinking_idx[0] == len(_thinking_text) - 1) or (i == len(_thinking_text) - 1 and _thinking_idx[0] == 0):
+                                    animated += f"{C.BPURPLE}{char}{C.RST}"
+                                else:
+                                    animated += f"{C.DIM}{char}{C.RST}"
+                            
+                            # Add line count if available
+                            line_info = ""
+                            if _line_count[0] > 0:
+                                line_info = f" {C.DIM}[{_line_count[0]} lines]{C.RST}"
+                            
+                            sys.stdout.write(f'\r  {animated}{line_info}')
+                            sys.stdout.flush()
+                            _thinking_idx[0] = (_thinking_idx[0] + 1) % len(_thinking_text)
+                            time.sleep(0.15)
+                    except:
+                        pass  # Silently exit on any error
+                    finally:
+                        # Always clear the line when done
+                        try:
+                            sys.stdout.write('\r' + ' ' * 60 + '\r')
+                            sys.stdout.flush()
+                        except:
+                            pass
                 
                 # Start animation thread
                 animation_thread = threading.Thread(target=animate_thinking, daemon=True)
                 animation_thread.start()
                 
-                def on_chunk(chunk: str):
+                def on_chunk(chunk: str, line_count: int = 0):
                     _stream_chars[0] += len(chunk)
+                    _line_count[0] = line_count  # Update line count
                     
                     if chunk.strip():
                         # Has visible content - stop animation and print it
@@ -1340,14 +1350,14 @@ def run(agent: Agent, state: State) -> None:
                 if not tool_calls:
                     # In auto mode, keep going until finish is called
                     if state.auto_mode:
-                        # If model just talked without acting, give it a nudge to use tools
-                        if had_content:
-                            full_prompt = "You just explained your plan. Now execute it by using the appropriate tools. Don't explain again - just act."
-                        else:
-                            full_prompt = build_continue_prompt(state, tools_used_this_turn, had_content)
+                        full_prompt = build_continue_prompt(state, tools_used_this_turn, had_content)
                         continue
                     else:
                         break
+                
+                # Reset counter when tools are used
+                if tool_calls:
+                    state.consecutive_talk_without_action = 0
                 should_stop = False
                 for tc in tool_calls:
                     name = tc["name"]
@@ -1379,7 +1389,25 @@ def run(agent: Agent, state: State) -> None:
                             agent.AddToolResult(tc_id, name, f"User response: {answer}")
                             full_prompt = answer
                         continue
-                    result = execute_tool(tc)
+                    if name == "requestUserCommand":
+                        cmd = args.get("command", "")
+                        reason = args.get("reason", "")
+                        wd = args.get("workingDirectory", "")
+                        print(f"\n{C.BYELLOW}  ╭─ Interactive Command Required{C.RST}")
+                        print(f"{C.BYELLOW}  │{C.RST} {reason}")
+                        print(f"{C.BYELLOW}  │{C.RST}")
+                        if wd:
+                            print(f"{C.BYELLOW}  │{C.RST} {C.GRAY}In directory:{C.RST} {wd}")
+                        print(f"{C.BYELLOW}  │{C.RST} {C.GRAY}Please run:{C.RST} {C.WHITE}{cmd}{C.RST}")
+                        print(f"{C.BYELLOW}  ╰─{C.RST}")
+                        answer = input(f"{C.BPURPLE}  Press Enter when done...{C.RST}")
+                        agent.AddToolResult(tc_id, name, f"User completed command: {cmd}")
+                        full_prompt = "continue"
+                        continue
+                    
+                    # Execute tool with timeout protection
+                    result = execute_tool_with_timeout(tc, timeout=60)
+                    
                     if name in ("fsWrite", "fsAppend", "strReplace"):
                         path = args.get("path", "")
                         if path:
@@ -1389,24 +1417,44 @@ def run(agent: Agent, state: State) -> None:
                         for p in paths:
                             if p:
                                 _push_unique(state.recent_reads, _norm_path(p))
+                    
                     print_tool(name, args, result, state.compact, state.verbose)
                     agent.AddToolResult(tc_id, name, compress_console(result))
+                
                 if should_stop:
                     break
+                
                 _verify_writes(state)
+                
                 if not state.auto_mode:
                     cont = input(f"{C.BPURPLE}  ╰─▸ {C.BYELLOW}continue?{C.RST} {C.GRAY}(y/n){C.RST} ")
                     if cont.lower() not in ('y', 'yes', ''):
                         break
+                
                 full_prompt = build_continue_prompt(state, tools_used_this_turn, had_content)
+                # Loop continues to call PromptWithTools again
+            
+            # Clean up any lingering output before returning to prompt
             state.recent_writes.clear()
+            _time.sleep(0.2)
+            sys.stdout.write('\r' + ' ' * 60 + '\r')
+            sys.stdout.flush()
         except KeyboardInterrupt:
             now = _time.time()
             if now - _last_interrupt < _INTERRUPT_WINDOW:
+                # Stop all animations globally
+                _global_stop_animations = True
+                _time.sleep(0.3)  # Give threads time to see the flag
+                sys.stdout.write('\r' + ' ' * 60 + '\r')
+                sys.stdout.flush()
                 print(f"\n\n  {C.BPURPLE}Goodbye!{C.RST}\n")
                 sys.exit(0)
             else:
                 _last_interrupt = now
+                # Give any animation threads time to clean up
+                _time.sleep(0.3)
+                sys.stdout.write('\r' + ' ' * 60 + '\r')
+                sys.stdout.flush()
                 print(f"\n  {C.BYELLOW}[!] Interrupted. Press Ctrl+C again to exit.{C.RST}")
                 state.reset_task()
                 pending_prompt = None

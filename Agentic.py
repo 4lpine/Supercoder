@@ -6,6 +6,7 @@ import time
 import os
 import sys
 import requests
+import concurrent.futures
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple, Iterator, Set
 
@@ -125,6 +126,7 @@ NATIVE_TOOLS = [
     {"type": "function", "function": {"name": "webSearch", "description": "Search the web for programming help, documentation, or solutions. Use when you need to look up how to do something, find examples, or troubleshoot errors.", "parameters": {"type": "object", "properties": {"query": {"type": "string", "description": "Search query (e.g., 'python async await example')"}, "site": {"type": "string", "description": "Optional site to restrict search (e.g., 'stackoverflow.com', 'github.com')"}, "maxResults": {"type": "integer", "description": "Maximum results to return (default 5)"}}, "required": ["query"]}}},
     {"type": "function", "function": {"name": "searchStackOverflow", "description": "Search Stack Overflow specifically for programming questions and solutions.", "parameters": {"type": "object", "properties": {"query": {"type": "string", "description": "Search query"}, "maxResults": {"type": "integer", "description": "Maximum results to return (default 5)"}}, "required": ["query"]}}},
     {"type": "function", "function": {"name": "interactWithUser", "description": "Interact with the user. Use ONLY when: (1) task is FULLY complete, (2) you hit a blocker that requires user decision, (3) you need clarification. Do NOT use mid-task.", "parameters": {"type": "object", "properties": {"message": {"type": "string", "description": "Message to show the user"}, "interactionType": {"type": "string", "enum": ["complete", "question", "error"], "description": "complete=task done, question=need user input, error=hit a blocker"}}, "required": ["message", "interactionType"]}}},
+    {"type": "function", "function": {"name": "requestUserCommand", "description": "Ask user to run an interactive command manually (for commands with menus/prompts that would hang). Returns when user confirms completion.", "parameters": {"type": "object", "properties": {"command": {"type": "string", "description": "Command to ask user to run"}, "reason": {"type": "string", "description": "Why this needs to be run manually"}, "workingDirectory": {"type": "string", "description": "Optional directory where command should be run"}}, "required": ["command", "reason"]}}},
     {"type": "function", "function": {"name": "finish", "description": "Signal that you have COMPLETED your current task and want the user to review your work. Call this when you are done.", "parameters": {"type": "object", "properties": {"summary": {"type": "string", "description": "A summary of what you accomplished"}, "status": {"type": "string", "enum": ["complete", "blocked", "partial"], "description": "complete=task done, blocked=needs user help, partial=some progress made"}}, "required": ["summary"]}}},
     {"type": "function", "function": {"name": "getFileInfo", "description": "Get file metadata (size, modification time, type). Use before reading large files.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "Path to file or directory"}}, "required": ["path"]}}},
     {"type": "function", "function": {"name": "listDirectoryTree", "description": "Get recursive tree view of directory structure. Better than listDirectory for understanding project layout.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "Root directory (default: .)"}, "maxDepth": {"type": "integer", "description": "Max recursion depth (default: 3)"}, "ignorePatterns": {"type": "array", "items": {"type": "string"}, "description": "Patterns to ignore (default: ['.git', '__pycache__', 'node_modules'])"}}, "required": []}}},
@@ -145,10 +147,23 @@ NATIVE_TOOLS = [
     {"type": "function", "function": {"name": "generateCommitMessage", "description": "Generate a descriptive commit message based on git diff", "parameters": {"type": "object", "properties": {"staged": {"type": "boolean", "description": "Generate for staged changes (default: true)"}}, "required": []}}},
     {"type": "function", "function": {"name": "createPullRequest", "description": "Create a pull request using GitHub CLI", "parameters": {"type": "object", "properties": {"title": {"type": "string", "description": "PR title"}, "body": {"type": "string", "description": "PR description"}, "base": {"type": "string", "description": "Base branch (default: main)"}, "head": {"type": "string", "description": "Head branch (default: current)"}}, "required": ["title"]}}},
     {"type": "function", "function": {"name": "resolveMergeConflict", "description": "Attempt to resolve merge conflicts in a file", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "Path to file with conflicts"}, "strategy": {"type": "string", "enum": ["ours", "theirs", "both"], "description": "Resolution strategy"}}, "required": ["path"]}}},
-    {"type": "function", "function": {"name": "supabaseQuery", "description": "Execute a Supabase database query (requires 'supabase on' first)", "parameters": {"type": "object", "properties": {"table": {"type": "string", "description": "Table name"}, "operation": {"type": "string", "enum": ["select", "insert", "update", "delete"], "description": "Operation type"}, "filters": {"type": "object", "description": "Filter conditions"}, "data": {"type": "object", "description": "Data for insert/update"}, "columns": {"type": "string", "description": "Columns to select (default: *)"}}, "required": ["table"]}}},
-    {"type": "function", "function": {"name": "supabaseListTables", "description": "List all tables in Supabase database", "parameters": {"type": "object", "properties": {}, "required": []}}},
-    {"type": "function", "function": {"name": "supabaseGetSchema", "description": "Get schema information for a Supabase table", "parameters": {"type": "object", "properties": {"table": {"type": "string", "description": "Table name"}}, "required": ["table"]}}},
-    {"type": "function", "function": {"name": "supabaseCount", "description": "Count rows in a Supabase table", "parameters": {"type": "object", "properties": {"table": {"type": "string", "description": "Table name"}, "filters": {"type": "object", "description": "Optional filter conditions"}}, "required": ["table"]}}},
+    # Supabase CLI Tools
+    {"type": "function", "function": {"name": "supabaseDbPush", "description": "Push local migrations to remote Supabase database", "parameters": {"type": "object", "properties": {"projectPath": {"type": "string", "description": "Path to project (default: .)"}, "projectRef": {"type": "string", "description": "Project reference (optional if linked)"}}, "required": []}}},
+    {"type": "function", "function": {"name": "supabaseDbPull", "description": "Pull remote schema to local migrations", "parameters": {"type": "object", "properties": {"projectPath": {"type": "string", "description": "Path to project (default: .)"}, "projectRef": {"type": "string", "description": "Project reference (optional if linked)"}}, "required": []}}},
+    {"type": "function", "function": {"name": "supabaseGenTypes", "description": "Generate TypeScript/other types from database schema", "parameters": {"type": "object", "properties": {"projectPath": {"type": "string", "description": "Path to project (default: .)"}, "projectRef": {"type": "string", "description": "Project reference (optional)"}, "lang": {"type": "string", "description": "Language: typescript, go, swift, kotlin (default: typescript)"}}, "required": []}}},
+    {"type": "function", "function": {"name": "supabaseProjectsList", "description": "List all Supabase projects", "parameters": {"type": "object", "properties": {}, "required": []}}},
+    {"type": "function", "function": {"name": "supabaseStatus", "description": "Check Supabase project status and link status", "parameters": {"type": "object", "properties": {"projectPath": {"type": "string", "description": "Path to project (default: .)"}}, "required": []}}},
+    {"type": "function", "function": {"name": "supabaseMigrationNew", "description": "Create a new migration file", "parameters": {"type": "object", "properties": {"name": {"type": "string", "description": "Migration name"}, "projectPath": {"type": "string", "description": "Path to project (default: .)"}}, "required": ["name"]}}},
+    {"type": "function", "function": {"name": "supabaseLink", "description": "Link project to Supabase (non-interactive, requires project ref)", "parameters": {"type": "object", "properties": {"projectRef": {"type": "string", "description": "Supabase project reference ID"}, "projectPath": {"type": "string", "description": "Path to project (default: .)"}}, "required": ["projectRef"]}}},
+    {"type": "function", "function": {"name": "supabaseUnlink", "description": "Unlink project from Supabase", "parameters": {"type": "object", "properties": {"projectPath": {"type": "string", "description": "Path to project (default: .)"}}, "required": []}}},
+    # Supabase Management API Tools
+    {"type": "function", "function": {"name": "supabaseMgmtConfigure", "description": "Configure Supabase Management API with Personal Access Token and project ref", "parameters": {"type": "object", "properties": {"accessToken": {"type": "string", "description": "Personal Access Token from https://supabase.com/dashboard/account/tokens"}, "projectRef": {"type": "string", "description": "Project reference ID (e.g., 'khmnxujtyvgrvgbxfemr')"}}, "required": ["accessToken", "projectRef"]}}},
+    {"type": "function", "function": {"name": "supabaseMgmtExecuteSql", "description": "Execute raw SQL query on Supabase database", "parameters": {"type": "object", "properties": {"query": {"type": "string", "description": "SQL query to execute"}}, "required": ["query"]}}},
+    {"type": "function", "function": {"name": "supabaseMgmtCreateTable", "description": "Create a new table with columns", "parameters": {"type": "object", "properties": {"table": {"type": "string", "description": "Table name"}, "columns": {"type": "object", "description": "Dict of column_name: data_type (e.g., {'name': 'TEXT', 'age': 'INTEGER'})"}, "primaryKey": {"type": "string", "description": "Primary key column (default: 'id')"}}, "required": ["table", "columns"]}}},
+    {"type": "function", "function": {"name": "supabaseMgmtListTables", "description": "List all tables in the public schema", "parameters": {"type": "object", "properties": {}, "required": []}}},
+    {"type": "function", "function": {"name": "supabaseMgmtGetSchema", "description": "Get schema information for a table", "parameters": {"type": "object", "properties": {"table": {"type": "string", "description": "Table name"}}, "required": ["table"]}}},
+    {"type": "function", "function": {"name": "supabaseMgmtDropTable", "description": "Drop a table", "parameters": {"type": "object", "properties": {"table": {"type": "string", "description": "Table name"}}, "required": ["table"]}}},
+    {"type": "function", "function": {"name": "supabaseMgmtDisable", "description": "Disable Supabase Management API", "parameters": {"type": "object", "properties": {}, "required": []}}},
     # Selenium Browser Automation Tools
     {"type": "function", "function": {"name": "seleniumStartBrowser", "description": "Start a browser session for automation. Returns session_id to use in other selenium commands.", "parameters": {"type": "object", "properties": {"browser": {"type": "string", "enum": ["chrome", "firefox", "edge"], "description": "Browser type (default: chrome)"}, "headless": {"type": "boolean", "description": "Run without GUI (default: false)"}}, "required": []}}},
     {"type": "function", "function": {"name": "seleniumCloseBrowser", "description": "Close a browser session", "parameters": {"type": "object", "properties": {"sessionId": {"type": "integer", "description": "Browser session ID"}}, "required": ["sessionId"]}}},
@@ -457,10 +472,29 @@ class Agent:
 
 
     def _call_api(self, streaming: bool = False) -> str:
+        """
+        Call API without tools. Includes hard timeout protection to prevent infinite hangs.
+        """
         max_retries = 5
+        max_total_time = 240  # Hard limit: 4 minutes total for all retries
+        start_time = time.time()
+        
         for attempt in range(max_retries):
+            # Check if we've exceeded total time budget
+            elapsed = time.time() - start_time
+            if elapsed > max_total_time:
+                print(f"\n[API call exceeded total time budget of {max_total_time}s]")
+                return "[Error: API call timed out]"
+            
             try:
                 token = TokenManager.get_token()
+                
+                # Add read timeout for streaming to prevent hangs
+                # (connect_timeout, read_timeout)
+                # Connect timeout: 10s (just to check if server responds)
+                # Read timeout: 180s (for full response to complete)
+                timeout = (10, 180) if streaming else (10, 120)
+                
                 resp = requests.post(
                     "https://openrouter.ai/api/v1/chat/completions",
                     headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
@@ -470,27 +504,61 @@ class Agent:
                         "stream": streaming,
                         "plugins": [{"id": "response-healing"}]
                     },
-                    timeout=120, stream=streaming
+                    timeout=timeout, stream=streaming
                 )
                 resp.raise_for_status()
                 if streaming:
                     result = ""
-                    for line in resp.iter_lines():
-                        if line:
-                            line = line.decode('utf-8')
-                            if line.startswith('data: '):
-                                line = line[6:]
-                            if line == '[DONE]':
-                                break
-                            try:
-                                data = json.loads(line)
-                                delta = data['choices'][0].get('delta', {})
-                                if 'content' in delta:
-                                    chunk = delta['content']
-                                    print(chunk, end='', flush=True)
-                                    result += chunk
-                            except:
-                                pass
+                    last_data_time = time.time()
+                    stream_timeout = 60  # Max seconds between chunks
+                    loop_start = time.time()
+                    max_loop_time = 180  # Max 3 minutes for entire stream
+                    
+                    # Wrap streaming in a thread to prevent indefinite hangs
+                    def stream_response():
+                        nonlocal result
+                        try:
+                            for line in resp.iter_lines(decode_unicode=True):
+                                # Check for stream timeout (no data received)
+                                current_time = time.time()
+                                
+                                # Hard timeout for entire streaming loop
+                                if current_time - loop_start > max_loop_time:
+                                    print(f"\n[Stream exceeded max time of {max_loop_time}s]")
+                                    return
+                                
+                                # Timeout between chunks
+                                if current_time - last_data_time > stream_timeout:
+                                    print(f"\n[Stream timeout: no data for {stream_timeout}s]")
+                                    return
+                                
+                                if line:
+                                    last_data_time = current_time  # Reset timeout on data
+                                    if line.startswith('data: '):
+                                        line = line[6:]
+                                    if line == '[DONE]':
+                                        break
+                                    try:
+                                        data = json.loads(line)
+                                        delta = data['choices'][0].get('delta', {})
+                                        if 'content' in delta:
+                                            chunk = delta['content']
+                                            print(chunk, end='', flush=True)
+                                            result += chunk
+                                    except:
+                                        pass
+                        except Exception as e:
+                            print(f"\n[Stream error: {e}]")
+                    
+                    # Execute streaming in thread with timeout
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                        future = executor.submit(stream_response)
+                        try:
+                            future.result(timeout=max_loop_time + 10)  # Extra buffer
+                        except concurrent.futures.TimeoutError:
+                            print(f"\n[Stream thread timeout after {max_loop_time + 10}s]")
+                            raise requests.exceptions.Timeout("Stream thread timeout")
+                    
                     print()
                     return result
                 else:
@@ -520,10 +588,29 @@ class Agent:
 
 
     def _call_api_with_tools(self, tools: List[dict], streaming: bool = False, on_chunk=None) -> Tuple[str, List[dict]]:
+        """
+        Call API with tools. Includes hard timeout protection to prevent infinite hangs.
+        """
         max_retries = 5
+        max_total_time = 240  # Hard limit: 4 minutes total for all retries
+        start_time = time.time()
+        
         for attempt in range(max_retries):
+            # Check if we've exceeded total time budget
+            elapsed = time.time() - start_time
+            if elapsed > max_total_time:
+                print(f"\n[API call exceeded total time budget of {max_total_time}s]")
+                return "[Error: API call timed out]", []
+            
             try:
                 token = TokenManager.get_token()
+                
+                # Add read timeout for streaming to prevent hangs
+                # (connect_timeout, read_timeout)
+                # Connect timeout: 10s (just to check if server responds)
+                # Read timeout: 180s (for full response to complete)
+                timeout = (10, 180) if streaming else (10, 120)
+                
                 resp = requests.post(
                     "https://openrouter.ai/api/v1/chat/completions",
                     headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
@@ -535,42 +622,82 @@ class Agent:
                         "stream": streaming,
                         "plugins": [{"id": "response-healing"}]
                     },
-                    timeout=120, stream=streaming
+                    timeout=timeout, stream=streaming
                 )
                 resp.raise_for_status()
+                
                 if streaming:
                     content = ""
                     tool_calls_data = {}
-                    for line in resp.iter_lines():
-                        if not line:
-                            continue
-                        line = line.decode('utf-8')
-                        if line.startswith('data: '):
-                            line = line[6:]
-                        if line == '[DONE]':
-                            break
+                    last_data_time = [time.time()]  # Use list for nonlocal mutation
+                    stream_timeout = 60  # Max seconds between chunks
+                    loop_start = time.time()
+                    max_loop_time = 180  # Max 3 minutes for entire stream
+                    
+                    # Wrap streaming in a thread to prevent indefinite hangs
+                    def stream_response():
+                        nonlocal content, tool_calls_data
                         try:
-                            data = json.loads(line)
-                            delta = data['choices'][0].get('delta', {})
-                            if 'content' in delta and delta['content']:
-                                chunk = delta['content']
-                                content += chunk
-                                if on_chunk:
-                                    on_chunk(chunk)
-                            if 'tool_calls' in delta:
-                                for tc in delta['tool_calls']:
-                                    idx = tc.get('index', 0)
-                                    if idx not in tool_calls_data:
-                                        tool_calls_data[idx] = {'id': '', 'name': '', 'arguments': ''}
-                                    if 'id' in tc:
-                                        tool_calls_data[idx]['id'] = tc['id']
-                                    if 'function' in tc:
-                                        if 'name' in tc['function']:
-                                            tool_calls_data[idx]['name'] = tc['function']['name']
-                                        if 'arguments' in tc['function']:
-                                            tool_calls_data[idx]['arguments'] += tc['function']['arguments']
-                        except:
-                            pass
+                            line_count = 0
+                            for line in resp.iter_lines(decode_unicode=True):
+                                line_count += 1
+                                
+                                # Check for stream timeout (no data received)
+                                current_time = time.time()
+                                
+                                # Hard timeout for entire streaming loop
+                                if current_time - loop_start > max_loop_time:
+                                    print(f"\n[Stream exceeded max time of {max_loop_time}s]")
+                                    return
+                                
+                                # Timeout between chunks
+                                if current_time - last_data_time[0] > stream_timeout:
+                                    print(f"\n[Stream timeout: no data for {stream_timeout}s]")
+                                    return
+                                
+                                if not line:
+                                    continue
+                                
+                                last_data_time[0] = current_time  # Reset timeout on data
+                                if line.startswith('data: '):
+                                    line = line[6:]
+                                if line == '[DONE]':
+                                    break
+                                try:
+                                    data = json.loads(line)
+                                    delta = data['choices'][0].get('delta', {})
+                                    if 'content' in delta and delta['content']:
+                                        chunk = delta['content']
+                                        content += chunk
+                                        if on_chunk:
+                                            on_chunk(chunk, line_count)  # Pass line count to callback
+                                    if 'tool_calls' in delta:
+                                        for tc in delta['tool_calls']:
+                                            idx = tc.get('index', 0)
+                                            if idx not in tool_calls_data:
+                                                tool_calls_data[idx] = {'id': '', 'name': '', 'arguments': ''}
+                                            if 'id' in tc:
+                                                tool_calls_data[idx]['id'] = tc['id']
+                                            if 'function' in tc:
+                                                if 'name' in tc['function']:
+                                                    tool_calls_data[idx]['name'] = tc['function']['name']
+                                                if 'arguments' in tc['function']:
+                                                    tool_calls_data[idx]['arguments'] += tc['function']['arguments']
+                                except:
+                                    pass
+                        except Exception as e:
+                            print(f"\n[Stream error: {e}]")
+                    
+                    # Execute streaming in thread with timeout
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                        future = executor.submit(stream_response)
+                        try:
+                            future.result(timeout=max_loop_time + 10)  # Extra buffer
+                        except concurrent.futures.TimeoutError:
+                            print(f"\n[Stream thread timeout after {max_loop_time + 10}s]")
+                            raise requests.exceptions.Timeout("Stream thread timeout")
+                    
+                    # Parse tool calls after streaming completes
                     parsed_calls = []
                     for idx in sorted(tool_calls_data.keys()):
                         tc = tool_calls_data[idx]
@@ -634,7 +761,8 @@ def execute_tool(tool_call: dict) -> str:
         analyze_stack_trace, rename_symbol, generate_commit_message, create_pull_request,
         resolve_merge_conflict
     )
-    import supabase_tools
+    import supabase_cli
+    import supabase_management
     import selenium_tools
     import vision_tools
 
@@ -783,6 +911,8 @@ def execute_tool(tool_call: dict) -> str:
             return "\n".join(output) or "No results found"
         elif name == "interactWithUser":
             return json.dumps(interact_with_user(args["message"], args.get("interactionType", "info")))
+        elif name == "requestUserCommand":
+            return json.dumps(request_user_command(args["command"], args["reason"], args.get("workingDirectory")))
         elif name == "finish":
             return json.dumps(finish(args["summary"], args.get("status", "complete")))
         # New tools
@@ -824,15 +954,38 @@ def execute_tool(tool_call: dict) -> str:
             return json.dumps(create_pull_request(args["title"], args.get("body", ""), args.get("base", "main"), args.get("head")))
         elif name == "resolveMergeConflict":
             return json.dumps(resolve_merge_conflict(args["path"], args.get("strategy", "ours")))
-        # Supabase tools
-        elif name == "supabaseQuery":
-            return json.dumps(supabase_tools.supabase_query(args["table"], args.get("operation", "select"), args.get("filters"), args.get("data"), args.get("columns", "*")))
-        elif name == "supabaseListTables":
-            return json.dumps(supabase_tools.supabase_list_tables())
-        elif name == "supabaseGetSchema":
-            return json.dumps(supabase_tools.supabase_get_schema(args["table"]))
-        elif name == "supabaseCount":
-            return json.dumps(supabase_tools.supabase_count(args["table"], args.get("filters")))
+        # Supabase CLI tools
+        elif name == "supabaseDbPush":
+            return json.dumps(supabase_cli.supabase_db_push(args.get("projectPath", "."), args.get("projectRef")))
+        elif name == "supabaseDbPull":
+            return json.dumps(supabase_cli.supabase_db_pull(args.get("projectPath", "."), args.get("projectRef")))
+        elif name == "supabaseGenTypes":
+            return json.dumps(supabase_cli.supabase_gen_types(args.get("projectPath", "."), args.get("projectRef"), args.get("lang", "typescript")))
+        elif name == "supabaseProjectsList":
+            return json.dumps(supabase_cli.supabase_projects_list())
+        elif name == "supabaseStatus":
+            return json.dumps(supabase_cli.supabase_status(args.get("projectPath", ".")))
+        elif name == "supabaseMigrationNew":
+            return json.dumps(supabase_cli.supabase_migration_new(args["name"], args.get("projectPath", ".")))
+        elif name == "supabaseLink":
+            return json.dumps(supabase_cli.supabase_link(args["projectRef"], args.get("projectPath", ".")))
+        elif name == "supabaseUnlink":
+            return json.dumps(supabase_cli.supabase_unlink(args.get("projectPath", ".")))
+        # Supabase Management API tools
+        elif name == "supabaseMgmtConfigure":
+            return json.dumps(supabase_management.supabase_mgmt_configure(args["accessToken"], args["projectRef"]))
+        elif name == "supabaseMgmtExecuteSql":
+            return json.dumps(supabase_management.supabase_mgmt_execute_sql(args["query"]))
+        elif name == "supabaseMgmtCreateTable":
+            return json.dumps(supabase_management.supabase_mgmt_create_table(args["table"], args["columns"], args.get("primaryKey", "id")))
+        elif name == "supabaseMgmtListTables":
+            return json.dumps(supabase_management.supabase_mgmt_list_tables())
+        elif name == "supabaseMgmtGetSchema":
+            return json.dumps(supabase_management.supabase_mgmt_get_schema(args["table"]))
+        elif name == "supabaseMgmtDropTable":
+            return json.dumps(supabase_management.supabase_mgmt_drop_table(args["table"]))
+        elif name == "supabaseMgmtDisable":
+            return json.dumps(supabase_management.supabase_mgmt_disable())
         # Selenium Browser Automation Tools
         elif name == "seleniumStartBrowser":
             return json.dumps(selenium_tools.selenium_start_browser(

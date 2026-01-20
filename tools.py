@@ -151,20 +151,18 @@ def get_process_output(process_id: int, lines: int = 100) -> Dict[str, Any]:
         return {"error": f"Process {process_id} not found"}
     
     proc = _background_processes[process_id]
-    try:
-        # Non-blocking read
-        import select
-        output = ""
-        if proc.stdout:
-            # Try to read available output
-            try:
-                proc.stdout.flush()
-                output = proc.stdout.read(10000) if proc.stdout.readable() else ""
-            except:
-                output = "(could not read output)"
-        return {"output": output}
-    except Exception as e:
-        return {"error": str(e)}
+    
+    # Check if process is still running
+    poll_result = proc.poll()
+    status = "running" if poll_result is None else f"exited with code {poll_result}"
+    
+    # For now, return status without trying to read output
+    # Reading stdout.read() blocks indefinitely on Windows when no data is available
+    # TODO: Implement proper non-blocking read for Windows
+    return {
+        "output": f"Process status: {status}\n\nNote: Output reading is disabled to prevent hangs. Check the terminal where you started Supercoder to see the dev server output.",
+        "status": status
+    }
 
 # --- File System ---
 def list_directory(path: str = ".") -> Dict[str, Any]:
@@ -761,6 +759,27 @@ def interact_with_user(message: str, interaction_type: str = "info") -> Dict[str
         "_interaction": True,
         "message": message,
         "type": interaction_type
+    }
+
+
+def request_user_command(command: str, reason: str, working_directory: str = None) -> Dict[str, Any]:
+    """
+    Request the user to run an interactive command manually in their terminal.
+    Use this for commands that require user input (arrow keys, menus, prompts).
+    
+    Args:
+        command: The command to ask the user to run (e.g., "supabase link")
+        reason: Why this command needs to be run manually
+        working_directory: Optional directory where command should be run
+    
+    Returns:
+        Marker dict that the execution loop will intercept
+    """
+    return {
+        "_user_command": True,
+        "command": command,
+        "reason": reason,
+        "working_directory": working_directory
     }
 
 
