@@ -3,6 +3,7 @@ Tools module for Supercoder - All tool implementations
 """
 import os
 import re
+import sys
 import json
 import subprocess
 import hashlib
@@ -78,24 +79,56 @@ undo_manager = UndoManager()
 
 # --- Shell Execution ---
 def execute_pwsh(command: str, timeout: int = 60) -> Dict[str, Any]:
-    """Execute a shell command"""
-    try:
-        result = subprocess.run(
-            command,
-            shell=True,
-            capture_output=True,
-            text=True,
-            timeout=timeout
-        )
-        return {
-            'stdout': result.stdout,
-            'stderr': result.stderr,
-            'returncode': result.returncode
-        }
-    except subprocess.TimeoutExpired:
-        return {'stdout': '', 'stderr': f'Timed out after {timeout}s', 'returncode': -1}
-    except Exception as e:
-        return {'stdout': '', 'stderr': str(e), 'returncode': -1}
+    """Execute a shell command with aggressive timeout handling"""
+    import threading
+    
+    result_container = {'result': None, 'error': None}
+    
+    def run_command():
+        try:
+            proc = subprocess.Popen(
+                command,
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == 'win32' else 0
+            )
+            
+            try:
+                stdout, stderr = proc.communicate(timeout=timeout)
+                result_container['result'] = {
+                    'stdout': stdout,
+                    'stderr': stderr,
+                    'returncode': proc.returncode
+                }
+            except subprocess.TimeoutExpired:
+                # Kill the process tree on timeout
+                if sys.platform == 'win32':
+                    subprocess.run(['taskkill', '/F', '/T', '/PID', str(proc.pid)], 
+                                 capture_output=True, timeout=5)
+                else:
+                    proc.kill()
+                proc.wait(timeout=5)
+                result_container['error'] = f'Command timed out after {timeout}s and was terminated'
+        except Exception as e:
+            result_container['error'] = str(e)
+    
+    thread = threading.Thread(target=run_command, daemon=True)
+    thread.start()
+    thread.join(timeout=timeout + 5)  # Give 5 extra seconds for cleanup
+    
+    if thread.is_alive():
+        # Thread is still running, command is completely stuck
+        return {'stdout': '', 'stderr': f'Command hung and could not be terminated after {timeout}s', 'returncode': -1}
+    
+    if result_container['error']:
+        return {'stdout': '', 'stderr': result_container['error'], 'returncode': -1}
+    
+    if result_container['result']:
+        return result_container['result']
+    
+    return {'stdout': '', 'stderr': 'Unknown error occurred', 'returncode': -1}
 
 # --- Background Process Management ---
 _background_processes: Dict[int, subprocess.Popen] = {}
