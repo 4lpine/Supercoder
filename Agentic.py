@@ -147,23 +147,16 @@ NATIVE_TOOLS = [
     {"type": "function", "function": {"name": "generateCommitMessage", "description": "Generate a descriptive commit message based on git diff", "parameters": {"type": "object", "properties": {"staged": {"type": "boolean", "description": "Generate for staged changes (default: true)"}}, "required": []}}},
     {"type": "function", "function": {"name": "createPullRequest", "description": "Create a pull request using GitHub CLI", "parameters": {"type": "object", "properties": {"title": {"type": "string", "description": "PR title"}, "body": {"type": "string", "description": "PR description"}, "base": {"type": "string", "description": "Base branch (default: main)"}, "head": {"type": "string", "description": "Head branch (default: current)"}}, "required": ["title"]}}},
     {"type": "function", "function": {"name": "resolveMergeConflict", "description": "Attempt to resolve merge conflicts in a file", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "Path to file with conflicts"}, "strategy": {"type": "string", "enum": ["ours", "theirs", "both"], "description": "Resolution strategy"}}, "required": ["path"]}}},
-    # Supabase CLI Tools
-    {"type": "function", "function": {"name": "supabaseDbPush", "description": "Push local migrations to remote Supabase database", "parameters": {"type": "object", "properties": {"projectPath": {"type": "string", "description": "Path to project (default: .)"}, "projectRef": {"type": "string", "description": "Project reference (optional if linked)"}}, "required": []}}},
-    {"type": "function", "function": {"name": "supabaseDbPull", "description": "Pull remote schema to local migrations", "parameters": {"type": "object", "properties": {"projectPath": {"type": "string", "description": "Path to project (default: .)"}, "projectRef": {"type": "string", "description": "Project reference (optional if linked)"}}, "required": []}}},
-    {"type": "function", "function": {"name": "supabaseGenTypes", "description": "Generate TypeScript/other types from database schema", "parameters": {"type": "object", "properties": {"projectPath": {"type": "string", "description": "Path to project (default: .)"}, "projectRef": {"type": "string", "description": "Project reference (optional)"}, "lang": {"type": "string", "description": "Language: typescript, go, swift, kotlin (default: typescript)"}}, "required": []}}},
-    {"type": "function", "function": {"name": "supabaseProjectsList", "description": "List all Supabase projects", "parameters": {"type": "object", "properties": {}, "required": []}}},
-    {"type": "function", "function": {"name": "supabaseStatus", "description": "Check Supabase project status and link status", "parameters": {"type": "object", "properties": {"projectPath": {"type": "string", "description": "Path to project (default: .)"}}, "required": []}}},
-    {"type": "function", "function": {"name": "supabaseMigrationNew", "description": "Create a new migration file", "parameters": {"type": "object", "properties": {"name": {"type": "string", "description": "Migration name"}, "projectPath": {"type": "string", "description": "Path to project (default: .)"}}, "required": ["name"]}}},
-    {"type": "function", "function": {"name": "supabaseLink", "description": "Link project to Supabase (non-interactive, requires project ref)", "parameters": {"type": "object", "properties": {"projectRef": {"type": "string", "description": "Supabase project reference ID"}, "projectPath": {"type": "string", "description": "Path to project (default: .)"}}, "required": ["projectRef"]}}},
-    {"type": "function", "function": {"name": "supabaseUnlink", "description": "Unlink project from Supabase", "parameters": {"type": "object", "properties": {"projectPath": {"type": "string", "description": "Path to project (default: .)"}}, "required": []}}},
-    # Supabase Management API Tools
-    {"type": "function", "function": {"name": "supabaseMgmtConfigure", "description": "Configure Supabase Management API with Personal Access Token and project ref", "parameters": {"type": "object", "properties": {"accessToken": {"type": "string", "description": "Personal Access Token from https://supabase.com/dashboard/account/tokens"}, "projectRef": {"type": "string", "description": "Project reference ID (e.g., 'khmnxujtyvgrvgbxfemr')"}}, "required": ["accessToken", "projectRef"]}}},
-    {"type": "function", "function": {"name": "supabaseMgmtExecuteSql", "description": "Execute raw SQL query on Supabase database", "parameters": {"type": "object", "properties": {"query": {"type": "string", "description": "SQL query to execute"}}, "required": ["query"]}}},
-    {"type": "function", "function": {"name": "supabaseMgmtCreateTable", "description": "Create a new table with columns", "parameters": {"type": "object", "properties": {"table": {"type": "string", "description": "Table name"}, "columns": {"type": "object", "description": "Dict of column_name: data_type (e.g., {'name': 'TEXT', 'age': 'INTEGER'})"}, "primaryKey": {"type": "string", "description": "Primary key column (default: 'id')"}}, "required": ["table", "columns"]}}},
-    {"type": "function", "function": {"name": "supabaseMgmtListTables", "description": "List all tables in the public schema", "parameters": {"type": "object", "properties": {}, "required": []}}},
-    {"type": "function", "function": {"name": "supabaseMgmtGetSchema", "description": "Get schema information for a table", "parameters": {"type": "object", "properties": {"table": {"type": "string", "description": "Table name"}}, "required": ["table"]}}},
-    {"type": "function", "function": {"name": "supabaseMgmtDropTable", "description": "Drop a table", "parameters": {"type": "object", "properties": {"table": {"type": "string", "description": "Table name"}}, "required": ["table"]}}},
-    {"type": "function", "function": {"name": "supabaseMgmtDisable", "description": "Disable Supabase Management API", "parameters": {"type": "object", "properties": {}, "required": []}}},
+    # Supabase Tools (using Python client)
+    {"type": "function", "function": {"name": "supabaseConfigure", "description": "Configure Supabase connection with URL and keys", "parameters": {"type": "object", "properties": {"url": {"type": "string", "description": "Supabase project URL (https://xxx.supabase.co)"}, "anonKey": {"type": "string", "description": "Anon/public key"}, "serviceRoleKey": {"type": "string", "description": "Service role key (optional, for admin operations)"}}, "required": ["url", "anonKey"]}}},
+    {"type": "function", "function": {"name": "supabaseSelect", "description": "Select data from a table", "parameters": {"type": "object", "properties": {"table": {"type": "string", "description": "Table name"}, "columns": {"type": "string", "description": "Columns to select (default: *)"}, "filters": {"type": "object", "description": "Dict of column: value filters"}, "limit": {"type": "integer", "description": "Max rows to return"}, "orderBy": {"type": "string", "description": "Column to order by"}}, "required": ["table"]}}},
+    {"type": "function", "function": {"name": "supabaseInsert", "description": "Insert data into a table", "parameters": {"type": "object", "properties": {"table": {"type": "string", "description": "Table name"}, "data": {"type": ["object", "array"], "description": "Single dict or list of dicts to insert"}}, "required": ["table", "data"]}}},
+    {"type": "function", "function": {"name": "supabaseUpdate", "description": "Update data in a table", "parameters": {"type": "object", "properties": {"table": {"type": "string", "description": "Table name"}, "data": {"type": "object", "description": "Data to update"}, "filters": {"type": "object", "description": "Dict of column: value filters"}}, "required": ["table", "data", "filters"]}}},
+    {"type": "function", "function": {"name": "supabaseDelete", "description": "Delete data from a table", "parameters": {"type": "object", "properties": {"table": {"type": "string", "description": "Table name"}, "filters": {"type": "object", "description": "Dict of column: value filters"}}, "required": ["table", "filters"]}}},
+    {"type": "function", "function": {"name": "supabaseExecuteSql", "description": "Execute raw SQL query (requires RPC function)", "parameters": {"type": "object", "properties": {"query": {"type": "string", "description": "SQL query to execute"}}, "required": ["query"]}}},
+    {"type": "function", "function": {"name": "supabaseListTables", "description": "List all tables in the public schema", "parameters": {"type": "object", "properties": {}, "required": []}}},
+    {"type": "function", "function": {"name": "supabaseGetSchema", "description": "Get schema information for a table", "parameters": {"type": "object", "properties": {"table": {"type": "string", "description": "Table name"}}, "required": ["table"]}}},
+    {"type": "function", "function": {"name": "supabaseDisable", "description": "Disable Supabase connection", "parameters": {"type": "object", "properties": {}, "required": []}}},
     # Selenium Browser Automation Tools
     {"type": "function", "function": {"name": "seleniumStartBrowser", "description": "Start a browser session for automation. Returns session_id to use in other selenium commands.", "parameters": {"type": "object", "properties": {"browser": {"type": "string", "enum": ["chrome", "firefox", "edge"], "description": "Browser type (default: chrome)"}, "headless": {"type": "boolean", "description": "Run without GUI (default: false)"}}, "required": []}}},
     {"type": "function", "function": {"name": "seleniumCloseBrowser", "description": "Close a browser session", "parameters": {"type": "object", "properties": {"sessionId": {"type": "integer", "description": "Browser session ID"}}, "required": ["sessionId"]}}},
@@ -761,8 +754,7 @@ def execute_tool(tool_call: dict) -> str:
         analyze_stack_trace, rename_symbol, generate_commit_message, create_pull_request,
         resolve_merge_conflict
     )
-    import supabase_cli
-    import supabase_management
+    import supabase_tools
     import selenium_tools
     import vision_tools
 
@@ -954,38 +946,25 @@ def execute_tool(tool_call: dict) -> str:
             return json.dumps(create_pull_request(args["title"], args.get("body", ""), args.get("base", "main"), args.get("head")))
         elif name == "resolveMergeConflict":
             return json.dumps(resolve_merge_conflict(args["path"], args.get("strategy", "ours")))
-        # Supabase CLI tools
-        elif name == "supabaseDbPush":
-            return json.dumps(supabase_cli.supabase_db_push(args.get("projectPath", "."), args.get("projectRef")))
-        elif name == "supabaseDbPull":
-            return json.dumps(supabase_cli.supabase_db_pull(args.get("projectPath", "."), args.get("projectRef")))
-        elif name == "supabaseGenTypes":
-            return json.dumps(supabase_cli.supabase_gen_types(args.get("projectPath", "."), args.get("projectRef"), args.get("lang", "typescript")))
-        elif name == "supabaseProjectsList":
-            return json.dumps(supabase_cli.supabase_projects_list())
-        elif name == "supabaseStatus":
-            return json.dumps(supabase_cli.supabase_status(args.get("projectPath", ".")))
-        elif name == "supabaseMigrationNew":
-            return json.dumps(supabase_cli.supabase_migration_new(args["name"], args.get("projectPath", ".")))
-        elif name == "supabaseLink":
-            return json.dumps(supabase_cli.supabase_link(args["projectRef"], args.get("projectPath", ".")))
-        elif name == "supabaseUnlink":
-            return json.dumps(supabase_cli.supabase_unlink(args.get("projectPath", ".")))
-        # Supabase Management API tools
-        elif name == "supabaseMgmtConfigure":
-            return json.dumps(supabase_management.supabase_mgmt_configure(args["accessToken"], args["projectRef"]))
-        elif name == "supabaseMgmtExecuteSql":
-            return json.dumps(supabase_management.supabase_mgmt_execute_sql(args["query"]))
-        elif name == "supabaseMgmtCreateTable":
-            return json.dumps(supabase_management.supabase_mgmt_create_table(args["table"], args["columns"], args.get("primaryKey", "id")))
-        elif name == "supabaseMgmtListTables":
-            return json.dumps(supabase_management.supabase_mgmt_list_tables())
-        elif name == "supabaseMgmtGetSchema":
-            return json.dumps(supabase_management.supabase_mgmt_get_schema(args["table"]))
-        elif name == "supabaseMgmtDropTable":
-            return json.dumps(supabase_management.supabase_mgmt_drop_table(args["table"]))
-        elif name == "supabaseMgmtDisable":
-            return json.dumps(supabase_management.supabase_mgmt_disable())
+        # Supabase tools
+        elif name == "supabaseConfigure":
+            return json.dumps(supabase_tools.supabase_configure(args["url"], args["anonKey"], args.get("serviceRoleKey")))
+        elif name == "supabaseSelect":
+            return json.dumps(supabase_tools.supabase_select(args["table"], args.get("columns", "*"), args.get("filters"), args.get("limit"), args.get("orderBy")))
+        elif name == "supabaseInsert":
+            return json.dumps(supabase_tools.supabase_insert(args["table"], args["data"]))
+        elif name == "supabaseUpdate":
+            return json.dumps(supabase_tools.supabase_update(args["table"], args["data"], args["filters"]))
+        elif name == "supabaseDelete":
+            return json.dumps(supabase_tools.supabase_delete(args["table"], args["filters"]))
+        elif name == "supabaseExecuteSql":
+            return json.dumps(supabase_tools.supabase_execute_sql(args["query"]))
+        elif name == "supabaseListTables":
+            return json.dumps(supabase_tools.supabase_list_tables())
+        elif name == "supabaseGetSchema":
+            return json.dumps(supabase_tools.supabase_get_schema(args["table"]))
+        elif name == "supabaseDisable":
+            return json.dumps(supabase_tools.supabase_disable())
         # Selenium Browser Automation Tools
         elif name == "seleniumStartBrowser":
             return json.dumps(selenium_tools.selenium_start_browser(
