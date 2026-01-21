@@ -203,6 +203,39 @@ Vision Analysis (use for UI debugging, accessibility checks, visual regression t
 - `visionSetMode(mode, modelSize?)` - Set vision mode: "api" (OpenRouter) or "local" (2b/4b/8b/32b)
 - `visionGetStatus()` - Get current vision configuration and model status
 
+Supabase Database (user must configure first with `supabase config` command):
+- `supabaseConfigure(url, anonKey, serviceRoleKey?)` - Configure connection (usually done via command, not tool)
+- `supabaseSelect(table, columns?, filters?, limit?, orderBy?)` - Query data from table
+- `supabaseInsert(table, data)` - Insert single row or multiple rows (data can be dict or list of dicts)
+- `supabaseUpdate(table, data, filters)` - Update rows matching filters
+- `supabaseDelete(table, filters)` - Delete rows matching filters
+- `supabaseExecuteSql(query)` - Execute raw SQL (requires RPC function setup)
+- `supabaseListTables()` - List all tables in public schema
+- `supabaseGetSchema(table)` - Get column information for a table
+- `supabaseDisable()` - Disable Supabase connection
+
+**IMPORTANT: Supabase Setup**
+Before using Supabase tools, the user must run `supabase config` command to set up credentials:
+1. User runs: `supabase config`
+2. Enters Project URL (https://xxx.supabase.co)
+3. Enters Anon/Public Key
+4. Optionally enters Service Role Key (for admin operations)
+
+After configuration, you can use all Supabase tools. Example workflow:
+```
+# Query users table
+supabaseSelect("users", columns="id,email,created_at", limit=10)
+
+# Insert new user
+supabaseInsert("users", {"email": "test@example.com", "name": "Test User"})
+
+# Update user
+supabaseUpdate("users", {"name": "Updated Name"}, {"email": "test@example.com"})
+
+# Delete user
+supabaseDelete("users", {"email": "test@example.com"})
+```
+
 Web & Network:
 - `webSearch(query, site?, maxResults?)` - Search the web for programming help
 - `searchStackOverflow(query, maxResults?)` - Search Stack Overflow specifically

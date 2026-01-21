@@ -1023,6 +1023,76 @@ def cmd_vision(state: State, agent: Agent, args: str) -> None:
         status("  vision status      - Show current configuration", "info")
 
 
+@cmd("supabase", "Configure Supabase connection", shortcuts=["sb"])
+def cmd_supabase(state: State, agent: Agent, args: str) -> None:
+    import supabase_tools
+    
+    args = args.strip()
+    
+    if not args or args == "status":
+        # Show current status
+        conn = supabase_tools.get_supabase()
+        if conn.enabled:
+            status("Supabase: Connected", "success")
+            status(f"URL: {conn.url}", "info")
+            status(f"Using service role: {bool(conn.service_role_key)}", "info")
+        else:
+            status("Supabase: Not configured", "warning")
+            status("Use 'supabase config' to set up connection", "info")
+        return
+    
+    if args == "config" or args == "configure":
+        # Interactive configuration
+        print(f"\n  {C.BPURPLE}Supabase Configuration{C.RST}")
+        print(f"  {C.DIM}Get your credentials from: https://supabase.com/dashboard/project/_/settings/api{C.RST}\n")
+        
+        try:
+            url = input(f"  {C.CYAN}Project URL{C.RST} (https://xxx.supabase.co): ").strip()
+            if not url:
+                status("Configuration cancelled", "warning")
+                return
+            
+            anon_key = input(f"  {C.CYAN}Anon/Public Key{C.RST}: ").strip()
+            if not anon_key:
+                status("Configuration cancelled", "warning")
+                return
+            
+            service_role = input(f"  {C.CYAN}Service Role Key{C.RST} (optional, press Enter to skip): ").strip()
+            
+            # Configure
+            result = supabase_tools.supabase_configure(url, anon_key, service_role if service_role else None)
+            
+            if "error" in result:
+                status(f"Configuration failed: {result['error']}", "error")
+            else:
+                status("Supabase configured successfully!", "success")
+                status(f"URL: {url}", "info")
+                status(f"Using service role: {bool(service_role)}", "info")
+                
+        except KeyboardInterrupt:
+            print()
+            status("Configuration cancelled", "warning")
+        except Exception as e:
+            status(f"Configuration error: {e}", "error")
+        return
+    
+    if args == "disable":
+        result = supabase_tools.supabase_disable()
+        status("Supabase connection disabled", "success")
+        return
+    
+    # Show usage
+    status("Usage: supabase [config | status | disable]", "error")
+    status("Examples:", "info")
+    status("  supabase config    - Configure Supabase connection (interactive)", "info")
+    status("  supabase status    - Show current configuration", "info")
+    status("  supabase disable   - Disable Supabase connection", "info")
+    status("", "info")
+    status("After configuration, the agent can use Supabase tools:", "info")
+    status("  - supabaseSelect, supabaseInsert, supabaseUpdate, supabaseDelete", "info")
+    status("  - supabaseExecuteSql, supabaseListTables, supabaseGetSchema", "info")
+
+
 @cmd("index", "Rebuild retrieval index")
 def cmd_index(state: State, agent: Agent, args: str) -> None:
     status("Building index...", "context")
