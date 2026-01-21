@@ -92,13 +92,78 @@ A prompt is asking for a web app if it mentions:
 ❌ "Help me debug this error"
 ❌ "Refactor this function"
 
-**When you detect a web app prompt, immediately:**
-1. Follow the `Agents/web-apps.md` guide
-2. Build the COMPLETE application autonomously
-3. Don't ask "what features?" - infer them
-4. Test with Selenium + Vision automatically
+**AUTONOMOUS WEB APP WORKFLOW (Execute ALL steps without asking):**
 
-Follow the comprehensive guide in `Agents/web-apps.md`. Key requirements:
+1. **Infer Requirements & Design Schema**
+   - Chat app → users, channels, messages, channel_members tables + real-time
+   - Todo app → users, todos, categories tables + CRUD
+   - Blog → users, posts, comments, tags, post_tags tables + markdown
+   - Social media → users, posts, likes, comments, follows tables + feed algorithm
+
+2. **Create Next.js Project**
+   ```bash
+   npx create-next-app@latest app-name --typescript --tailwind --app
+   cd app-name
+   npm install @supabase/supabase-js @supabase/auth-helpers-nextjs
+   ```
+
+3. **Setup Supabase Client**
+   - Create `.env.local` with NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY
+   - Create `lib/supabase.ts` with createClient()
+
+4. **Build Authentication**
+   - Create `contexts/AuthContext.tsx` with useAuth hook
+   - Implement signIn, signUp, signOut functions
+   - Create `/login` and `/signup` pages
+   - Add middleware.ts for protected routes
+
+5. **Build ALL Core Features**
+   - Create database schema with RLS policies
+   - Build all CRUD operations
+   - Add real-time subscriptions if needed (chat, social media)
+   - Create all pages and components
+   - Add search/filter functionality
+   - Implement user profiles
+   - Add proper error handling and loading states
+
+6. **Test Automatically**
+   ```typescript
+   controlPwshProcess("start", "npm run dev", path="app-name")
+   executePwsh("Start-Sleep -Seconds 8")
+   const sessionId = seleniumStartBrowser(headless=true)
+   seleniumNavigate(sessionId, "http://localhost:3000")
+   // Test signup, login, all features
+   seleniumScreenshot(sessionId)
+   visionAnalyzeUI(screenshot)
+   seleniumCloseBrowser(sessionId)
+   ```
+
+7. **Report Completion**
+   - Summarize what was built
+   - Provide instructions to run: `cd app-name && npm run dev`
+
+**What "COMPLETE" means:**
+✅ Database schema with RLS policies
+✅ Auth (signup, login, logout, protected routes)
+✅ All core features fully implemented
+✅ All CRUD operations where applicable
+✅ Real-time updates where applicable (chat, social media)
+✅ Error handling and loading states
+✅ Responsive design (mobile + desktop)
+✅ User profiles
+✅ Navigation between pages
+✅ Proper TypeScript types
+✅ Environment variables configured
+✅ Tested with Selenium + Vision
+✅ Working dev server
+✅ Clear instructions for user
+
+**Tech Stack (Always use this):**
+- Frontend: Next.js 14+ (App Router), React 18+, TypeScript, Tailwind CSS
+- Backend: Supabase (PostgreSQL + Auth + Storage + Realtime)
+- Testing: Selenium + Vision AI
+
+**Key Requirements:**
 - **Infer all features** - Don't ask "what features?", infer standard features for that app type
 - **Build EVERYTHING** - Complete app with auth, all CRUD operations, real-time if needed, search/filter, etc.
 - Use Next.js 14+ with App Router for frontend
