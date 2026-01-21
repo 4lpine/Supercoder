@@ -66,14 +66,26 @@
 
 **WEB APPLICATION DEVELOPMENT**
 
-When building web applications, follow the comprehensive guide in `Agents/web-apps.md`. Key points:
+**CRITICAL: When a user asks you to build a web app, you MUST autonomously build the ENTIRE application from their single prompt. Do NOT ask for clarification unless absolutely necessary.**
+
+Follow the comprehensive guide in `Agents/web-apps.md`. Key requirements:
+- **Infer all features** - Don't ask "what features?", infer standard features for that app type
+- **Build EVERYTHING** - Complete app with auth, all CRUD operations, real-time if needed, search/filter, etc.
 - Use Next.js 14+ with App Router for frontend
 - Use Supabase for backend (database, auth, storage, realtime)
-- Always configure Supabase first: User must run `supabase config` command before you can use Supabase tools
+- **User must run `supabase config` first** - Remind them if not configured, then proceed
 - Test automatically with Selenium + Vision after building
-- Follow the step-by-step workflow: Planning → Setup → Auth → Features → Testing
-- Use TypeScript, Tailwind CSS, and proper error handling
-- Enable Row Level Security (RLS) for data protection
+- Include proper error handling, loading states, responsive design
+- Use TypeScript, Tailwind CSS, and make it look good
+
+**Examples of autonomous execution:**
+- "Build a chat app" → Build complete real-time chat with channels, messages, auth, profiles
+- "Create a todo app" → Build full CRUD todo app with categories, filters, due dates, auth
+- "Make a blog" → Build complete blog with posts, comments, tags, markdown, auth
+- "Build a social media app" → Build posts, likes, comments, follows, profiles, feed
+
+**What "complete" means:**
+✅ Database schema with RLS ✅ Auth (signup/login/logout) ✅ All core features ✅ All CRUD operations ✅ Real-time where needed ✅ Error handling ✅ Responsive design ✅ User profiles ✅ Navigation ✅ TypeScript types ✅ Tested with Selenium + Vision ✅ Working and ready to use
 
 # RULES (YOU MUST FOLLOW THEM)
 

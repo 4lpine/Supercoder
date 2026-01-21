@@ -2,12 +2,31 @@
 
 This guide teaches you how to build complete, production-ready web applications using Supercoder.
 
+## CRITICAL: Autonomous Execution
+
+**When a user asks you to build a web app, you MUST autonomously complete the ENTIRE application from their single prompt. Do NOT ask for clarification unless absolutely necessary.**
+
+Your job is to:
+1. **Infer requirements** from the user's description
+2. **Design the complete system** (database schema, features, UI)
+3. **Build everything** (backend, frontend, auth, all features)
+4. **Test automatically** (Selenium + Vision verification)
+5. **Report completion** with what you built and how to use it
+
+**Example user prompts you should handle autonomously:**
+- "Build me a chat app" → Build complete real-time chat with channels, messages, auth
+- "Create a todo app" → Build full CRUD todo app with auth and persistence
+- "Make a blog" → Build complete blog with posts, comments, auth, markdown support
+- "Build a social media app" → Build posts, likes, comments, follows, profiles, feed
+
+**DO NOT ask "What features do you want?" - INFER standard features for that app type and build them all.**
+
 ## Core Principles
 
 1. **Start with the backend** - Database schema and API first
 2. **Use modern frameworks** - React/Next.js for frontend, Supabase for backend
 3. **Test automatically** - Use Selenium + Vision to verify UI
-4. **Iterate quickly** - Build, test, fix, repeat
+4. **Build EVERYTHING** - Don't stop until the app is fully functional
 
 ## Standard Tech Stack
 
@@ -30,14 +49,17 @@ This guide teaches you how to build complete, production-ready web applications 
 
 ## Step-by-Step Workflow
 
-### 1. Planning & Schema Design
+**IMPORTANT: Execute ALL steps autonomously. Do not stop to ask the user questions.**
 
-**Ask the user for requirements:**
-- What does the app do?
-- Who are the users?
-- What features are needed?
+### 1. Planning & Schema Design (Do this automatically)
 
-**Design the database schema:**
+**Infer requirements from user's prompt:**
+- "Chat app" → Real-time messaging, channels, users, auth
+- "Todo app" → Tasks with CRUD, categories, auth, due dates
+- "Blog" → Posts, comments, auth, markdown, tags
+- "Social media" → Posts, likes, comments, follows, profiles, feed
+
+**Design the database schema automatically:**
 ```sql
 -- Example: Chat app schema
 CREATE TABLE users (
@@ -564,3 +586,157 @@ See the workflow above for a complete example of building a real-time chat appli
 - User profiles
 
 Follow the step-by-step guide and test each feature as you build it!
+
+---
+
+## AUTONOMOUS EXECUTION EXAMPLES
+
+### Example 1: "Build me a chat app"
+
+**What you should do autonomously:**
+
+1. **Design schema** (no asking):
+   - users table (id, email, name, avatar_url, created_at)
+   - channels table (id, name, description, created_by, created_at)
+   - messages table (id, channel_id, user_id, content, created_at)
+   - channel_members table (channel_id, user_id, joined_at)
+
+2. **Create Next.js project**:
+   ```bash
+   npx create-next-app@latest chat-app --typescript --tailwind --app
+   cd chat-app
+   npm install @supabase/supabase-js @supabase/auth-helpers-nextjs
+   ```
+
+3. **Build ALL features**:
+   - Auth (login, signup, logout)
+   - Channel list with create/join
+   - Real-time message feed
+   - Message input with send
+   - User profiles
+   - Online status indicators
+
+4. **Test automatically**:
+   - Start dev server
+   - Open in Selenium
+   - Test signup flow
+   - Test channel creation
+   - Test sending messages
+   - Take screenshots and verify with Vision
+
+5. **Report completion**:
+   "Built a complete real-time chat app with authentication, channels, and messaging. To use: cd chat-app && npm run dev, then visit http://localhost:3000"
+
+### Example 2: "Create a todo app"
+
+**What you should do autonomously:**
+
+1. **Design schema**:
+   - users table
+   - todos table (id, user_id, title, description, completed, due_date, priority, category, created_at)
+   - categories table (id, user_id, name, color)
+
+2. **Build ALL features**:
+   - Auth
+   - Todo CRUD (create, read, update, delete)
+   - Mark complete/incomplete
+   - Filter by status/category
+   - Sort by due date/priority
+   - Categories with colors
+   - Search functionality
+
+3. **Test everything automatically**
+
+4. **Report completion**
+
+### Example 3: "Make a blog"
+
+**What you should do autonomously:**
+
+1. **Design schema**:
+   - users table
+   - posts table (id, author_id, title, content, slug, published, created_at, updated_at)
+   - comments table (id, post_id, user_id, content, created_at)
+   - tags table (id, name)
+   - post_tags table (post_id, tag_id)
+
+2. **Build ALL features**:
+   - Auth
+   - Post CRUD with markdown editor
+   - Comment system
+   - Tag system
+   - Public post list
+   - Individual post pages
+   - Author profiles
+   - Search and filter
+
+3. **Test everything**
+
+4. **Report completion**
+
+### Example 4: "Build a social media app"
+
+**What you should do autonomously:**
+
+1. **Design schema**:
+   - users table (with bio, avatar, banner)
+   - posts table (id, user_id, content, image_url, created_at)
+   - likes table (post_id, user_id)
+   - comments table (post_id, user_id, content)
+   - follows table (follower_id, following_id)
+
+2. **Build ALL features**:
+   - Auth with profile setup
+   - Create posts (text + images)
+   - Like/unlike posts
+   - Comment on posts
+   - Follow/unfollow users
+   - Feed (posts from followed users)
+   - User profiles
+   - Explore page
+
+3. **Test everything**
+
+4. **Report completion**
+
+---
+
+## CRITICAL RULES FOR AUTONOMOUS EXECUTION
+
+1. **NEVER ask "What features do you want?"** - Infer standard features for that app type
+2. **Build EVERYTHING** - Don't build a "minimal" version, build the COMPLETE app
+3. **Include auth by default** - Every web app needs authentication
+4. **Test automatically** - Always use Selenium + Vision to verify
+5. **Handle errors gracefully** - Add proper error handling and loading states
+6. **Make it look good** - Use Tailwind CSS to make it visually appealing
+7. **Add all CRUD operations** - If it's a data app, include create, read, update, delete
+8. **Include real-time if relevant** - Chat, social media, collaborative apps need real-time
+9. **Add search/filter** - Most apps benefit from search and filtering
+10. **Complete the full flow** - From signup to using all features
+
+## What "Complete" Means
+
+A complete web app includes:
+- ✅ Database schema with RLS policies
+- ✅ Authentication (signup, login, logout, protected routes)
+- ✅ All core features fully implemented
+- ✅ All CRUD operations where applicable
+- ✅ Real-time updates where applicable
+- ✅ Error handling and loading states
+- ✅ Responsive design (mobile + desktop)
+- ✅ User profiles
+- ✅ Navigation between pages
+- ✅ Proper TypeScript types
+- ✅ Environment variables configured
+- ✅ Tested with Selenium + Vision
+- ✅ Working dev server
+- ✅ Clear instructions for user
+
+## When to Ask Questions
+
+**ONLY ask questions if:**
+- User wants a very unusual/custom app you can't infer
+- User explicitly asks for specific features you're unsure about
+- There's a critical technical decision that affects the entire architecture
+
+**For 95% of web app requests, you should build autonomously without asking anything.**
