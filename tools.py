@@ -1785,3 +1785,42 @@ def resolve_merge_conflict(path: str, strategy: str = "ours") -> Dict[str, Any]:
     
     except Exception as e:
         return {"error": str(e)}
+
+
+# --- Load Context Guide ---
+def load_context_guide(guide_name: str) -> Dict[str, Any]:
+    """
+    Load additional context guides for specialized tasks.
+    Use this when you recognize a task that needs specialized knowledge.
+    
+    Args:
+        guide_name: Name of the guide to load (e.g., "web-apps")
+    
+    Available guides:
+    - "web-apps": Complete guide for building web applications with Next.js + Supabase
+    
+    Returns:
+        Guide content and metadata
+    """
+    try:
+        # Get the Agents directory
+        agents_dir = Path(__file__).parent / "Agents"
+        guide_path = agents_dir / f"{guide_name}.md"
+        
+        if not guide_path.exists():
+            return {
+                "error": f"Guide '{guide_name}' not found",
+                "available_guides": ["web-apps"]
+            }
+        
+        content = guide_path.read_text(encoding='utf-8')
+        
+        return {
+            "guide_name": guide_name,
+            "content": content,
+            "path": str(guide_path),
+            "message": f"Loaded {guide_name} guide - follow this for the current task"
+        }
+        
+    except Exception as e:
+        return {"error": str(e)}

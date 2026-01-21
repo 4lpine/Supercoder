@@ -147,6 +147,7 @@ NATIVE_TOOLS = [
     {"type": "function", "function": {"name": "generateCommitMessage", "description": "Generate a descriptive commit message based on git diff", "parameters": {"type": "object", "properties": {"staged": {"type": "boolean", "description": "Generate for staged changes (default: true)"}}, "required": []}}},
     {"type": "function", "function": {"name": "createPullRequest", "description": "Create a pull request using GitHub CLI", "parameters": {"type": "object", "properties": {"title": {"type": "string", "description": "PR title"}, "body": {"type": "string", "description": "PR description"}, "base": {"type": "string", "description": "Base branch (default: main)"}, "head": {"type": "string", "description": "Head branch (default: current)"}}, "required": ["title"]}}},
     {"type": "function", "function": {"name": "resolveMergeConflict", "description": "Attempt to resolve merge conflicts in a file", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "Path to file with conflicts"}, "strategy": {"type": "string", "enum": ["ours", "theirs", "both"], "description": "Resolution strategy"}}, "required": ["path"]}}},
+    {"type": "function", "function": {"name": "loadContextGuide", "description": "Load specialized context guides for specific tasks. Use when you recognize a web app request or other specialized task. Available: 'web-apps' (for building Next.js + Supabase applications)", "parameters": {"type": "object", "properties": {"guideName": {"type": "string", "description": "Guide to load: 'web-apps' for web application development"}}, "required": ["guideName"]}}},
     # Supabase Tools (using Python client)
     {"type": "function", "function": {"name": "supabaseConfigure", "description": "Configure Supabase connection with URL and keys", "parameters": {"type": "object", "properties": {"url": {"type": "string", "description": "Supabase project URL (https://xxx.supabase.co)"}, "anonKey": {"type": "string", "description": "Anon/public key"}, "serviceRoleKey": {"type": "string", "description": "Service role key (optional, for admin operations)"}}, "required": ["url", "anonKey"]}}},
     {"type": "function", "function": {"name": "supabaseSelect", "description": "Select data from a table", "parameters": {"type": "object", "properties": {"table": {"type": "string", "description": "Table name"}, "columns": {"type": "string", "description": "Columns to select (default: *)"}, "filters": {"type": "object", "description": "Dict of column: value filters"}, "limit": {"type": "integer", "description": "Max rows to return"}, "orderBy": {"type": "string", "description": "Column to order by"}}, "required": ["table"]}}},
@@ -752,7 +753,7 @@ def execute_tool(tool_call: dict) -> str:
         find_in_file, get_environment_variable, validate_json, count_lines, backup_file,
         generate_tests, analyze_test_coverage, set_breakpoint_trace, remove_breakpoints,
         analyze_stack_trace, rename_symbol, generate_commit_message, create_pull_request,
-        resolve_merge_conflict
+        resolve_merge_conflict, load_context_guide
     )
     import supabase_tools
     import selenium_tools
@@ -946,6 +947,8 @@ def execute_tool(tool_call: dict) -> str:
             return json.dumps(create_pull_request(args["title"], args.get("body", ""), args.get("base", "main"), args.get("head")))
         elif name == "resolveMergeConflict":
             return json.dumps(resolve_merge_conflict(args["path"], args.get("strategy", "ours")))
+        elif name == "loadContextGuide":
+            return json.dumps(load_context_guide(args["guideName"]))
         # Supabase tools
         elif name == "supabaseConfigure":
             return json.dumps(supabase_tools.supabase_configure(args["url"], args["anonKey"], args.get("serviceRoleKey")))
