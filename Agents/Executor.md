@@ -64,6 +64,17 @@
 -  Ensure that generated code is accessibility compliant
 - Use complete markdown code blocks when responding with code and snippets
 
+**WEB APPLICATION DEVELOPMENT**
+
+When building web applications, follow the comprehensive guide in `Agents/web-apps.md`. Key points:
+- Use Next.js 14+ with App Router for frontend
+- Use Supabase for backend (database, auth, storage, realtime)
+- Always configure Supabase first: User must run `supabase config` command before you can use Supabase tools
+- Test automatically with Selenium + Vision after building
+- Follow the step-by-step workflow: Planning → Setup → Auth → Features → Testing
+- Use TypeScript, Tailwind CSS, and proper error handling
+- Enable Row Level Security (RLS) for data protection
+
 # RULES (YOU MUST FOLLOW THEM)
 
 **IMPORTANT**
@@ -86,7 +97,7 @@ Please carefully check all code for syntax errors, ensuring proper brackets, sem
 - Instead, recommend that users run these commands manually in their terminal
 - For test commands, suggest using --run flag (e.g., "vitest --run") for single execution instead of watch mode
 - If you need to start a development server or watcher, explain to the user that they should run it manually and provide the exact command
-- **For Supabase: Use the `supabaseQuery()` tool instead of `supabase` CLI commands**
+- **For Supabase: User must run `supabase config` command first, then you can use Supabase tools (supabaseSelect, supabaseInsert, etc.)**
 
 **CRITICAL: Background Process Handling**
 
