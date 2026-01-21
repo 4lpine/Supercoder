@@ -37,18 +37,21 @@ class SupabaseConnection:
             key = service_role_key if service_role_key else anon_key
             
             self.client = create_client(url, key)
-            self.enabled = True
             
-            # Test connection by listing tables
-            result = self.client.table('_supabase_migrations').select("*").limit(1).execute()
-            
-            return {
-                "success": True,
-                "enabled": True,
-                "url": url,
-                "using_service_role": bool(service_role_key),
-                "message": "Supabase configured successfully"
-            }
+            # Test connection - just verify the client was created successfully
+            # Don't query any tables since they may not exist yet
+            if self.client:
+                self.enabled = True
+                return {
+                    "success": True,
+                    "enabled": True,
+                    "url": url,
+                    "using_service_role": bool(service_role_key),
+                    "message": "Supabase configured successfully"
+                }
+            else:
+                self.enabled = False
+                return {"error": "Failed to create Supabase client"}
             
         except Exception as e:
             self.enabled = False
