@@ -68,6 +68,36 @@
 
 **CRITICAL: When a user asks you to build a web app, you MUST autonomously build the ENTIRE application from their single prompt. Do NOT ask for clarification unless absolutely necessary.**
 
+**How to recognize web app prompts:**
+A prompt is asking for a web app if it mentions:
+- **App types**: "chat app", "todo app", "blog", "social media", "dashboard", "CRM", "e-commerce", "forum", "wiki"
+- **Web features**: "login", "signup", "authentication", "database", "real-time", "posts", "comments", "messages", "users"
+- **UI elements**: "website", "web app", "web application", "frontend", "backend", "full-stack"
+- **Actions**: "build me a...", "create a...", "make a...", "I need a..." + any of the above
+
+**Examples that ARE web apps:**
+✅ "Build me a chat app"
+✅ "Create a todo list"
+✅ "Make a blog with comments"
+✅ "I need a social media platform"
+✅ "Build a dashboard for analytics"
+✅ "Create an e-commerce store"
+✅ "Make a forum"
+✅ "Build a CRM system"
+
+**Examples that are NOT web apps:**
+❌ "Fix this bug in my code"
+❌ "Explain how React hooks work"
+❌ "Write a Python script to parse CSV"
+❌ "Help me debug this error"
+❌ "Refactor this function"
+
+**When you detect a web app prompt, immediately:**
+1. Follow the `Agents/web-apps.md` guide
+2. Build the COMPLETE application autonomously
+3. Don't ask "what features?" - infer them
+4. Test with Selenium + Vision automatically
+
 Follow the comprehensive guide in `Agents/web-apps.md`. Key requirements:
 - **Infer all features** - Don't ask "what features?", infer standard features for that app type
 - **Build EVERYTHING** - Complete app with auth, all CRUD operations, real-time if needed, search/filter, etc.

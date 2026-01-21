@@ -2,6 +2,35 @@
 
 This guide teaches you how to build complete, production-ready web applications using Supercoder.
 
+## Recognizing Web App Prompts
+
+**You should follow this guide when the user's prompt asks for a web application. Here's how to recognize them:**
+
+**Keywords that indicate a web app:**
+- **App types**: chat, todo, blog, social media, dashboard, CRM, e-commerce, forum, wiki, portfolio, landing page
+- **Web features**: login, signup, auth, database, real-time, posts, comments, messages, users, profiles
+- **UI/Stack terms**: website, web app, frontend, backend, full-stack, Next.js, React, Supabase
+- **Action verbs**: "build", "create", "make" + any app type
+
+**Examples of web app prompts:**
+- "Build me a chat app" → YES, follow this guide
+- "Create a todo list with authentication" → YES
+- "Make a blog" → YES
+- "I need a social media platform" → YES
+- "Build a dashboard" → YES
+- "Create an e-commerce store" → YES
+- "Make a portfolio website" → YES
+- "Build a CRM system" → YES
+
+**NOT web app prompts (don't use this guide):**
+- "Fix this bug" → NO, just fix the bug
+- "Explain React hooks" → NO, just explain
+- "Write a Python script" → NO, write the script
+- "Debug this error" → NO, debug it
+- "Refactor this code" → NO, refactor it
+
+**If you're unsure:** If the prompt mentions building/creating something with users, data, or a UI, it's probably a web app.
+
 ## CRITICAL: Autonomous Execution
 
 **When a user asks you to build a web app, you MUST autonomously complete the ENTIRE application from their single prompt. Do NOT ask for clarification unless absolutely necessary.**
