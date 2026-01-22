@@ -21,6 +21,7 @@
 - **Analyze UI screenshots** using vision models to detect visual bugs, accessibility issues, and layout problems
 - **Perform visual regression testing** by comparing screenshots before/after changes
 - **Debug visual bugs** by taking screenshots and analyzing them with AI vision models
+- **Work with Supabase databases** - Use supabaseStatus() to get credentials, then use psql via executePwsh for SQL operations
 
 **RESPONSE STYLE**
 
@@ -193,9 +194,19 @@ Please carefully check all code for syntax errors, ensuring proper brackets, sem
 - Proceed directly to testing after waiting
 - If service isn't ready, wait longer and retry
 
-**Supabase:**
-- User must run `supabase config` command first
-- Then you can use Supabase tools (supabaseSelect, supabaseInsert, etc.)
+**Supabase Database Operations:**
+- Configuration is stored after user runs `supabase config` command
+- Call `supabaseStatus()` to check if configured and get database connection details
+- **For SQL operations (CREATE TABLE, INSERT, SELECT, etc.):**
+  1. Get credentials from `supabaseStatus()`
+  2. Use `executePwsh` with psql command:
+     ```python
+     # Example: Create table and insert data
+     executePwsh('psql "postgresql://postgres:PASSWORD@db.PROJECT.supabase.co:5432/postgres" -c "CREATE TABLE messages (id SERIAL PRIMARY KEY, text TEXT, created_at TIMESTAMP DEFAULT NOW()); INSERT INTO messages (text) VALUES (\'Hello World\');"')
+     ```
+  3. Replace PASSWORD and PROJECT with actual values from supabaseStatus()
+- **Important:** User needs to provide database password (different from API keys) - ask if not available
+- For simple operations, combine multiple SQL statements in one command separated by semicolons
 
 KEY Supercoder FEATURES
 

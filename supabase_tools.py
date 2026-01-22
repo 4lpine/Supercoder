@@ -20,6 +20,7 @@ class SupabaseConnection:
         self.url: Optional[str] = None
         self.service_role_key: Optional[str] = None
         self.anon_key: Optional[str] = None
+        self.db_password: Optional[str] = None
         self.enabled = False
         self._load_config()
     
@@ -32,10 +33,11 @@ class SupabaseConnection:
                     url = config.get('url')
                     anon_key = config.get('anon_key')
                     service_role_key = config.get('service_role_key')
+                    db_password = config.get('db_password')
                     
                     if url and anon_key:
                         # Silently configure from saved config
-                        self.configure(url, anon_key, service_role_key)
+                        self.configure(url, anon_key, service_role_key, db_password)
         except Exception:
             # Silently fail - config will need to be set up manually
             pass
@@ -47,7 +49,8 @@ class SupabaseConnection:
             config = {
                 'url': self.url,
                 'anon_key': self.anon_key,
-                'service_role_key': self.service_role_key
+                'service_role_key': self.service_role_key,
+                'db_password': self.db_password
             }
             with open(CONFIG_FILE, 'w') as f:
                 json.dump(config, f, indent=2)
@@ -55,7 +58,7 @@ class SupabaseConnection:
             # Non-fatal - just means config won't persist
             pass
     
-    def configure(self, url: str, anon_key: str, service_role_key: str = None) -> Dict[str, Any]:
+    def configure(self, url: str, anon_key: str, service_role_key: str = None, db_password: str = None) -> Dict[str, Any]:
         """
         Configure Supabase connection
         
@@ -63,6 +66,7 @@ class SupabaseConnection:
             url: Supabase project URL (e.g., https://xxx.supabase.co)
             anon_key: Anon/public key
             service_role_key: Service role key (optional, for admin operations)
+            db_password: Database password (optional, for direct PostgreSQL access)
         
         Returns:
             Configuration status
@@ -71,6 +75,7 @@ class SupabaseConnection:
             self.url = url
             self.anon_key = anon_key
             self.service_role_key = service_role_key
+            self.db_password = db_password
             
             # Use service role key if provided, otherwise anon key
             key = service_role_key if service_role_key else anon_key
@@ -87,6 +92,7 @@ class SupabaseConnection:
                     "enabled": True,
                     "url": url,
                     "using_service_role": bool(service_role_key),
+                    "has_db_password": bool(db_password),
                     "message": "Supabase configured successfully"
                 }
             else:
@@ -379,12 +385,24 @@ def get_supabase() -> SupabaseConnection:
 def supabase_status() -> Dict[str, Any]:
     """Check if Supabase is configured and get status"""
     conn = get_supabase()
-    return {
+    result = {
         "enabled": conn.enabled,
         "configured": conn.enabled,
         "url": conn.url if conn.enabled else None,
-        "using_service_role": bool(conn.service_role_key) if conn.enabled else False
+        "using_service_role": bool(conn.service_role_key) if conn.enabled else False,
+        "has_db_password": bool(conn.db_password) if conn.enabled else False
     }
+    
+    # Add database connection string if configured
+    if conn.enabled and conn.url:
+        project_ref = conn.url.replace("https://", "").replace(".supabase.co", "")
+        if conn.db_password:
+            result["database_url"] = f"postgresql://postgres:{conn.db_password}@db.{project_ref}.supabase.co:5432/postgres"
+        else:
+            result["database_url_template"] = f"postgresql://postgres:[DB_PASSWORD]@db.{project_ref}.supabase.co:5432/postgres"
+            result["note"] = "Database password not configured. User needs to provide it from Supabase dashboard > Settings > Database"
+    
+    return result
 
 
 def supabase_configure(url: str, anon_key: str, service_role_key: str = None) -> Dict[str, Any]:

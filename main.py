@@ -1168,7 +1168,8 @@ def cmd_supabase(state: State, agent: Agent, args: str) -> None:
     if args == "config" or args == "configure":
         # Interactive configuration
         print(f"\n  {C.BPURPLE}Supabase Configuration{C.RST}")
-        print(f"  {C.DIM}Get your credentials from: https://supabase.com/dashboard/project/_/settings/api{C.RST}\n")
+        print(f"  {C.DIM}Get API credentials from: https://supabase.com/dashboard/project/_/settings/api{C.RST}")
+        print(f"  {C.DIM}Get database password from: https://supabase.com/dashboard/project/_/settings/database{C.RST}\n")
         
         try:
             url = input(f"  {C.CYAN}Project URL{C.RST} (https://xxx.supabase.co): ").strip()
@@ -1182,9 +1183,15 @@ def cmd_supabase(state: State, agent: Agent, args: str) -> None:
                 return
             
             service_role = input(f"  {C.CYAN}Service Role Key{C.RST} (optional, press Enter to skip): ").strip()
+            db_password = input(f"  {C.CYAN}Database Password{C.RST} (optional, for SQL operations): ").strip()
             
             # Configure
-            result = supabase_tools.supabase_configure(url, anon_key, service_role if service_role else None)
+            result = supabase_tools.supabase_configure(
+                url, 
+                anon_key, 
+                service_role if service_role else None,
+                db_password if db_password else None
+            )
             
             if "error" in result:
                 status(f"Configuration failed: {result['error']}", "error")
@@ -1192,6 +1199,7 @@ def cmd_supabase(state: State, agent: Agent, args: str) -> None:
                 status("Supabase configured successfully!", "success")
                 status(f"URL: {url}", "info")
                 status(f"Using service role: {bool(service_role)}", "info")
+                status(f"Database password configured: {bool(db_password)}", "info")
                 
         except KeyboardInterrupt:
             print()

@@ -148,18 +148,8 @@ NATIVE_TOOLS = [
     {"type": "function", "function": {"name": "createPullRequest", "description": "Create a pull request using GitHub CLI", "parameters": {"type": "object", "properties": {"title": {"type": "string", "description": "PR title"}, "body": {"type": "string", "description": "PR description"}, "base": {"type": "string", "description": "Base branch (default: main)"}, "head": {"type": "string", "description": "Head branch (default: current)"}}, "required": ["title"]}}},
     {"type": "function", "function": {"name": "resolveMergeConflict", "description": "Attempt to resolve merge conflicts in a file", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "Path to file with conflicts"}, "strategy": {"type": "string", "enum": ["ours", "theirs", "both"], "description": "Resolution strategy"}}, "required": ["path"]}}},
     {"type": "function", "function": {"name": "loadContextGuide", "description": "Load specialized context guides for specific tasks. Use when you recognize a web app request or other specialized task. Available: 'web-apps' (for building Next.js + Supabase applications)", "parameters": {"type": "object", "properties": {"guideName": {"type": "string", "description": "Guide to load: 'web-apps' for web application development"}}, "required": ["guideName"]}}},
-    # Supabase Tools (using Python client)
-    {"type": "function", "function": {"name": "supabaseStatus", "description": "Check if Supabase is configured and get connection status. ALWAYS call this FIRST before other Supabase operations to check if already configured.", "parameters": {"type": "object", "properties": {}}}},
-    {"type": "function", "function": {"name": "supabaseConfigure", "description": "Configure Supabase connection with URL and keys", "parameters": {"type": "object", "properties": {"url": {"type": "string", "description": "Supabase project URL (https://xxx.supabase.co)"}, "anonKey": {"type": "string", "description": "Anon/public key"}, "serviceRoleKey": {"type": "string", "description": "Service role key (optional, for admin operations)"}}, "required": ["url", "anonKey"]}}},
-    {"type": "function", "function": {"name": "supabaseCreateTableAndInsert", "description": "Insert data into a table. If table doesn't exist, provides SQL to create it. Use this when you want to write data and aren't sure if table exists.", "parameters": {"type": "object", "properties": {"tableName": {"type": "string", "description": "Table name"}, "data": {"type": "object", "description": "Data to insert"}}, "required": ["tableName", "data"]}}},
-    {"type": "function", "function": {"name": "supabaseSelect", "description": "Select data from a table", "parameters": {"type": "object", "properties": {"table": {"type": "string", "description": "Table name"}, "columns": {"type": "string", "description": "Columns to select (default: *)"}, "filters": {"type": "object", "description": "Dict of column: value filters"}, "limit": {"type": "integer", "description": "Max rows to return"}, "orderBy": {"type": "string", "description": "Column to order by"}}, "required": ["table"]}}},
-    {"type": "function", "function": {"name": "supabaseInsert", "description": "Insert data into a table", "parameters": {"type": "object", "properties": {"table": {"type": "string", "description": "Table name"}, "data": {"type": ["object", "array"], "description": "Single dict or list of dicts to insert"}}, "required": ["table", "data"]}}},
-    {"type": "function", "function": {"name": "supabaseUpdate", "description": "Update data in a table", "parameters": {"type": "object", "properties": {"table": {"type": "string", "description": "Table name"}, "data": {"type": "object", "description": "Data to update"}, "filters": {"type": "object", "description": "Dict of column: value filters"}}, "required": ["table", "data", "filters"]}}},
-    {"type": "function", "function": {"name": "supabaseDelete", "description": "Delete data from a table", "parameters": {"type": "object", "properties": {"table": {"type": "string", "description": "Table name"}, "filters": {"type": "object", "description": "Dict of column: value filters"}}, "required": ["table", "filters"]}}},
-    {"type": "function", "function": {"name": "supabaseExecuteSql", "description": "Execute raw SQL query (requires RPC function)", "parameters": {"type": "object", "properties": {"query": {"type": "string", "description": "SQL query to execute"}}, "required": ["query"]}}},
-    {"type": "function", "function": {"name": "supabaseListTables", "description": "List all tables in the public schema", "parameters": {"type": "object", "properties": {}, "required": []}}},
-    {"type": "function", "function": {"name": "supabaseGetSchema", "description": "Get schema information for a table", "parameters": {"type": "object", "properties": {"table": {"type": "string", "description": "Table name"}}, "required": ["table"]}}},
-    {"type": "function", "function": {"name": "supabaseDisable", "description": "Disable Supabase connection", "parameters": {"type": "object", "properties": {}, "required": []}}},
+    # Supabase Configuration (use executePwsh with psql for actual database operations)
+    {"type": "function", "function": {"name": "supabaseStatus", "description": "Check if Supabase is configured and get connection details including database URL. Use this to get credentials for psql commands.", "parameters": {"type": "object", "properties": {}}}},
     # Selenium Browser Automation Tools
     {"type": "function", "function": {"name": "seleniumStartBrowser", "description": "Start a browser session for automation. Returns session_id to use in other selenium commands.", "parameters": {"type": "object", "properties": {"browser": {"type": "string", "enum": ["chrome", "firefox", "edge"], "description": "Browser type (default: chrome)"}, "headless": {"type": "boolean", "description": "Run without GUI (default: false)"}}, "required": []}}},
     {"type": "function", "function": {"name": "seleniumCloseBrowser", "description": "Close a browser session", "parameters": {"type": "object", "properties": {"sessionId": {"type": "integer", "description": "Browser session ID"}}, "required": ["sessionId"]}}},
@@ -955,29 +945,9 @@ def execute_tool(tool_call: dict) -> str:
             return json.dumps(resolve_merge_conflict(args["path"], args.get("strategy", "ours")))
         elif name == "loadContextGuide":
             return json.dumps(load_context_guide(args["guideName"]))
-        # Supabase tools
+        # Supabase - returns status with database connection string for psql
         elif name == "supabaseStatus":
             return json.dumps(supabase_tools.supabase_status())
-        elif name == "supabaseConfigure":
-            return json.dumps(supabase_tools.supabase_configure(args["url"], args["anonKey"], args.get("serviceRoleKey")))
-        elif name == "supabaseCreateTableAndInsert":
-            return json.dumps(supabase_tools.supabase_create_table_and_insert(args["tableName"], args["data"]))
-        elif name == "supabaseSelect":
-            return json.dumps(supabase_tools.supabase_select(args["table"], args.get("columns", "*"), args.get("filters"), args.get("limit"), args.get("orderBy")))
-        elif name == "supabaseInsert":
-            return json.dumps(supabase_tools.supabase_insert(args["table"], args["data"]))
-        elif name == "supabaseUpdate":
-            return json.dumps(supabase_tools.supabase_update(args["table"], args["data"], args["filters"]))
-        elif name == "supabaseDelete":
-            return json.dumps(supabase_tools.supabase_delete(args["table"], args["filters"]))
-        elif name == "supabaseExecuteSql":
-            return json.dumps(supabase_tools.supabase_execute_sql(args["query"]))
-        elif name == "supabaseListTables":
-            return json.dumps(supabase_tools.supabase_list_tables())
-        elif name == "supabaseGetSchema":
-            return json.dumps(supabase_tools.supabase_get_schema(args["table"]))
-        elif name == "supabaseDisable":
-            return json.dumps(supabase_tools.supabase_disable())
         # Selenium Browser Automation Tools
         elif name == "seleniumStartBrowser":
             return json.dumps(selenium_tools.selenium_start_browser(
