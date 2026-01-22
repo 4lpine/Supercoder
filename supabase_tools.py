@@ -1,10 +1,16 @@
 """
 Supabase integration for Supercoder using the official Python client
-Simple configuration via input prompts
+Simple configuration via input prompts with persistent storage
 """
 import json
+import os
+from pathlib import Path
 from typing import Any, Dict, Optional, List
 from supabase import create_client, Client
+
+# Config file location
+CONFIG_DIR = Path.home() / ".supercoder"
+CONFIG_FILE = CONFIG_DIR / "supabase_config.json"
 
 class SupabaseConnection:
     """Manages Supabase connection and operations"""
@@ -15,6 +21,39 @@ class SupabaseConnection:
         self.service_role_key: Optional[str] = None
         self.anon_key: Optional[str] = None
         self.enabled = False
+        self._load_config()
+    
+    def _load_config(self) -> None:
+        """Load configuration from disk if it exists"""
+        try:
+            if CONFIG_FILE.exists():
+                with open(CONFIG_FILE, 'r') as f:
+                    config = json.load(f)
+                    url = config.get('url')
+                    anon_key = config.get('anon_key')
+                    service_role_key = config.get('service_role_key')
+                    
+                    if url and anon_key:
+                        # Silently configure from saved config
+                        self.configure(url, anon_key, service_role_key)
+        except Exception:
+            # Silently fail - config will need to be set up manually
+            pass
+    
+    def _save_config(self) -> None:
+        """Save configuration to disk"""
+        try:
+            CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+            config = {
+                'url': self.url,
+                'anon_key': self.anon_key,
+                'service_role_key': self.service_role_key
+            }
+            with open(CONFIG_FILE, 'w') as f:
+                json.dump(config, f, indent=2)
+        except Exception as e:
+            # Non-fatal - just means config won't persist
+            pass
     
     def configure(self, url: str, anon_key: str, service_role_key: str = None) -> Dict[str, Any]:
         """
@@ -42,6 +81,7 @@ class SupabaseConnection:
             # Don't query any tables since they may not exist yet
             if self.client:
                 self.enabled = True
+                self._save_config()  # Persist configuration
                 return {
                     "success": True,
                     "enabled": True,
@@ -260,6 +300,14 @@ class SupabaseConnection:
         self.url = None
         self.anon_key = None
         self.service_role_key = None
+        
+        # Remove saved config
+        try:
+            if CONFIG_FILE.exists():
+                CONFIG_FILE.unlink()
+        except Exception:
+            pass
+        
         return {"enabled": False, "message": "Supabase disabled"}
 
 
