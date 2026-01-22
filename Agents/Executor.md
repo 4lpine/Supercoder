@@ -142,29 +142,37 @@ Please carefully check all code for syntax errors, ensuring proper brackets, sem
 - Keep in mind that the current working directory is likely NOT to be the one with this file, so figure out which directory you are in first.
 - symbol search across files.
 
-**LONG-RUNNING COMMANDS WARNING**
+**COMMAND EXECUTION GUIDELINES**
 
-- NEVER use shell commands for long-running processes like development servers, build watchers, or interactive applications
-- Commands like "npm run dev", "yarn start", "webpack --watch", "jest --watch", or text editors will block execution and cause issues
-- **NEVER use INTERACTIVE commands** that require user input like arrow keys, menus, or prompts
-- **CRITICAL INTERACTIVE COMMANDS THAT WILL HANG:**
-  - ❌ `npx create-next-app` (without `--yes` flag) - WILL HANG
-  - ❌ `npm init` - WILL HANG
-  - ❌ `supabase link` - WILL HANG
-  - ❌ `git rebase -i` - WILL HANG
-  - ✅ ALWAYS use `npx create-next-app@latest app-name --typescript --tailwind --app --yes` (with --yes flag)
-- Instead, recommend that users run these commands manually in their terminal
-- For test commands, suggest using --run flag (e.g., "vitest --run") for single execution instead of watch mode
-- If you need to start a development server or watcher, use `controlPwshProcess` NOT `executePwsh`
-- **For Supabase: User must run `supabase config` command first, then you can use Supabase tools (supabaseSelect, supabaseInsert, etc.)**
+**Interactive Commands:**
+- ✅ **USE `executePwsh` with `interactiveResponses` parameter** for commands that prompt for input
+- Examples:
+  ```python
+  executePwsh("npx create-next-app my-app", interactiveResponses=["Y","Y","Y","N","Y","N"])
+  executePwsh("npm init", interactiveResponses=["","","","","","","","","yes"])
+  ```
+- The tool will show what responses are being sent and stream output in real-time
+- **DO NOT use `requestUserCommand` for interactive commands** - you can handle them yourself!
 
-**CRITICAL: Background Process Handling**
+**Long-Running Processes:**
+- ❌ **NEVER use `executePwsh` for long-running processes** like dev servers or watchers
+- ✅ **USE `controlPwshProcess`** for background processes:
+  ```python
+  controlPwshProcess("start", "npm run dev", path="my-app")
+  executePwsh("Start-Sleep -Seconds 8")  # Wait for server to start
+  # Now test the app
+  ```
 
-- After starting a background process with `controlPwshProcess`, wait 5-10 seconds before using it
-- Use `executePwsh(command="Start-Sleep -Seconds 8")` to wait - this is safe and won't hang
-- **DO NOT use `getProcessOutput`** - it's disabled on Windows because it blocks indefinitely
-- Proceed directly to testing after waiting - don't try to check if the server is ready
-- If the service isn't ready, your test will fail and you can wait longer and retry
+**Background Process Handling:**
+- After starting with `controlPwshProcess`, wait 5-10 seconds before using it
+- Use `executePwsh("Start-Sleep -Seconds 8")` to wait - this is safe
+- **DO NOT use `getProcessOutput`** - it's disabled on Windows
+- Proceed directly to testing after waiting
+- If service isn't ready, wait longer and retry
+
+**Supabase:**
+- User must run `supabase config` command first
+- Then you can use Supabase tools (supabaseSelect, supabaseInsert, etc.)
 
 KEY Supercoder FEATURES
 
@@ -318,31 +326,7 @@ System & Environment:
 
 User Interaction:
 - `interactWithUser(message, interactionType)` - Communicate with user (complete/question/error)
-- `requestUserCommand(command, reason, workingDirectory?)` - Ask user to run an interactive command manually
 - `finish(summary, status?)` - Signal task completion with summary
-
-**INTERACTIVE COMMANDS**
-
-For commands that require user input (menus, arrow keys, prompts), use `requestUserCommand` instead of `executePwsh`:
-
-```
-requestUserCommand(
-    command="supabase link",
-    reason="Project needs to be linked to Supabase database",
-    workingDirectory="chat-app"
-)
-```
-
-This will:
-1. Show the user a formatted prompt with the command and reason
-2. Wait for them to run it manually in their terminal
-3. Continue your execution once they press Enter
-
-**Use this for:**
-- `supabase link` (interactive project selection)
-- `npm init` (interactive setup)
-- `git rebase -i` (interactive rebase)
-- Any command with menus or prompts
 
 **SUPABASE CLI TOOLS**
 

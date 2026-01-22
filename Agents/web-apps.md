@@ -4,18 +4,21 @@ This guide teaches you how to build complete, production-ready web applications 
 
 ## ⚠️ CRITICAL: Interactive Commands
 
-**For interactive commands, use `executePwshInteractive` with explicit responses!**
+**Use `executePwsh` with `interactiveResponses` parameter for interactive commands!**
 
 **Example:**
-```typescript
-executePwshInteractive(
+```python
+executePwsh(
   "npx create-next-app@latest my-app",
-  responses=["Y", "Y", "Y", "N", "Y", "N"]
-  // TypeScript? Y, ESLint? Y, Tailwind? Y, src/? N, App Router? Y, alias? N
+  interactiveResponses=["Y", "Y", "Y", "N", "Y", "N"]
+  # TypeScript? Y, ESLint? Y, Tailwind? Y, src/? N, App Router? Y, alias? N
 )
 ```
 
-**DO NOT use regular `executePwsh` for interactive commands - it will hang!**
+**The tool will:**
+- Show what responses are being sent
+- Stream output in real-time as the command runs
+- Handle all prompts automatically
 
 ## Recognizing Web App Prompts
 
@@ -149,10 +152,10 @@ CREATE POLICY "Authenticated users can create messages" ON messages FOR INSERT W
 ### 2. Project Setup
 
 **Create Next.js project:**
-```bash
-executePwshInteractive(
+```python
+executePwsh(
   "npx create-next-app@latest my-app",
-  responses=["Y", "Y", "Y", "N", "Y", "N"]
+  interactiveResponses=["Y", "Y", "Y", "N", "Y", "N"]
 )
 cd my-app
 ```
