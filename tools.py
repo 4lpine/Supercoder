@@ -81,137 +81,147 @@ undo_manager = UndoManager()
 def execute_pwsh(command: str, timeout: int = 60, interactive_responses: List[str] = None) -> Dict[str, Any]:
     """
     Execute a shell command with optional interactive response handling.
-    Streams output in real-time and automatically handles prompts.
+    
+    For interactive commands (like npm init), provide responses as a list.
+    Each response will be sent when the command prompts for input.
     
     Args:
         command: Command to execute
         timeout: Timeout in seconds
-        interactive_responses: Optional list of responses for interactive prompts
+        interactive_responses: List of responses to send sequentially (e.g., ["testing", "", "A simple app", ...])
     
     Returns:
-        Command output and result
+        Dict with stdout, stderr, returncode
     """
-    import threading
-    import time
-    
-    result_container = {'result': None, 'error': None, 'proc': None}
-    
-    def run_command():
+    if not interactive_responses:
+        # Non-interactive: simple subprocess execution
         try:
-            proc = subprocess.Popen(
+            result = subprocess.run(
                 command,
                 shell=True,
-                stdin=subprocess.PIPE if interactive_responses else None,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                capture_output=True,
                 text=True,
-                bufsize=1,  # Line buffered
-                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == 'win32' else 0
+                timeout=timeout,
+                cwd=os.getcwd()
             )
-            
-            result_container['proc'] = proc
-            
-            if interactive_responses:
-                # Interactive mode - send responses and stream output
-                input_text = '\n'.join(interactive_responses) + '\n'
-                
-                # Print what we're sending
-                print(f"\n[Interactive Mode] Sending {len(interactive_responses)} responses:")
-                for i, resp in enumerate(interactive_responses, 1):
-                    print(f"  {i}. '{resp}'")
-                print()
-                
-                try:
-                    # Start threads to read output while sending input
-                    stdout_lines = []
-                    stderr_lines = []
-                    
-                    def read_stdout():
-                        for line in iter(proc.stdout.readline, ''):
-                            if line:
-                                print(line, end='', flush=True)  # Stream to console
-                                stdout_lines.append(line)
-                    
-                    def read_stderr():
-                        for line in iter(proc.stderr.readline, ''):
-                            if line:
-                                print(line, end='', flush=True)  # Stream to console
-                                stderr_lines.append(line)
-                    
-                    stdout_thread = threading.Thread(target=read_stdout, daemon=True)
-                    stderr_thread = threading.Thread(target=read_stderr, daemon=True)
-                    
-                    stdout_thread.start()
-                    stderr_thread.start()
-                    
-                    # Send input
-                    proc.stdin.write(input_text)
-                    proc.stdin.close()
-                    
-                    # Wait for process to complete
-                    proc.wait(timeout=timeout)
-                    
-                    # Wait for output threads to finish
-                    stdout_thread.join(timeout=2)
-                    stderr_thread.join(timeout=2)
-                    
-                    result_container['result'] = {
-                        'stdout': ''.join(stdout_lines),
-                        'stderr': ''.join(stderr_lines),
-                        'returncode': proc.returncode
-                    }
-                    
-                except subprocess.TimeoutExpired:
-                    if sys.platform == 'win32':
-                        subprocess.run(['taskkill', '/F', '/T', '/PID', str(proc.pid)], 
-                                     capture_output=True, timeout=5)
-                    else:
-                        proc.kill()
-                    result_container['error'] = f'Command timed out after {timeout}s'
-            else:
-                # Non-interactive mode - standard execution
-                try:
-                    stdout, stderr = proc.communicate(timeout=timeout)
-                    result_container['result'] = {
-                        'stdout': stdout,
-                        'stderr': stderr,
-                        'returncode': proc.returncode
-                    }
-                except subprocess.TimeoutExpired:
-                    if sys.platform == 'win32':
-                        subprocess.run(['taskkill', '/F', '/T', '/PID', str(proc.pid)], 
-                                     capture_output=True, timeout=5)
-                    else:
-                        proc.kill()
-                    proc.wait(timeout=5)
-                    result_container['error'] = f'Command timed out after {timeout}s'
-                    
+            return {
+                'stdout': result.stdout,
+                'stderr': result.stderr,
+                'returncode': result.returncode
+            }
+        except subprocess.TimeoutExpired as e:
+            return {
+                'stdout': e.stdout or '',
+                'stderr': f'Command timed out after {timeout}s',
+                'returncode': -1
+            }
         except Exception as e:
-            result_container['error'] = str(e)
+            return {
+                'stdout': '',
+                'stderr': str(e),
+                'returncode': -1
+            }
     
-    thread = threading.Thread(target=run_command, daemon=True)
-    thread.start()
-    thread.join(timeout=timeout + 10)
-    
-    if thread.is_alive():
-        if result_container['proc']:
+    # Interactive mode: use wexpect on Windows
+    try:
+        import wexpect
+        
+        print(f"\n[Interactive Mode] Starting command: {command}")
+        print(f"[Interactive Mode] Will send {len(interactive_responses)} responses")
+        
+        # Spawn the command
+        child = wexpect.spawn(f'cmd.exe /c {command}', timeout=timeout, encoding='utf-8', codec_errors='ignore')
+        
+        output_lines = []
+        response_index = 0
+        
+        while True:
             try:
-                if sys.platform == 'win32':
-                    subprocess.run(['taskkill', '/F', '/T', '/PID', str(result_container['proc'].pid)], 
-                                 capture_output=True, timeout=5)
+                # Wait for output with a short timeout
+                index = child.expect([r'.+[\r\n]', wexpect.TIMEOUT, wexpect.EOF], timeout=3)
+                
+                # Capture output
+                if child.before:
+                    output_lines.append(child.before)
+                    print(child.before, end='', flush=True)
+                
+                if index == 0:  # Got output
+                    if child.after:
+                        output_lines.append(child.after)
+                        print(child.after, end='', flush=True)
+                    
+                    # Check if we should send a response
+                    # Look for common prompt patterns: ":", "?", ">"
+                    recent_output = (child.before or '') + (child.after or '')
+                    if response_index < len(interactive_responses) and any(p in recent_output for p in [':', '?', '>', '(', ')']):
+                        response = interactive_responses[response_index]
+                        print(f"\n[Sending {response_index + 1}/{len(interactive_responses)}]: '{response}'", flush=True)
+                        child.sendline(response)
+                        response_index += 1
+                
+                elif index == 1:  # Timeout - command might be waiting for input
+                    if response_index < len(interactive_responses):
+                        response = interactive_responses[response_index]
+                        print(f"\n[Timeout - Sending {response_index + 1}/{len(interactive_responses)}]: '{response}'", flush=True)
+                        child.sendline(response)
+                        response_index += 1
+                    else:
+                        # No more responses and got timeout, command might be done
+                        break
+                
+                elif index == 2:  # EOF - command finished
+                    break
+                    
+            except wexpect.EOF:
+                break
+            except wexpect.TIMEOUT:
+                if response_index < len(interactive_responses):
+                    response = interactive_responses[response_index]
+                    print(f"\n[Timeout - Sending {response_index + 1}/{len(interactive_responses)}]: '{response}'", flush=True)
+                    child.sendline(response)
+                    response_index += 1
                 else:
-                    result_container['proc'].kill()
-            except:
-                pass
-        return {'stdout': '', 'stderr': f'Command hung after {timeout}s', 'returncode': -1}
-    
-    if result_container['error']:
-        return {'stdout': '', 'stderr': result_container['error'], 'returncode': -1}
-    
-    if result_container['result']:
-        return result_container['result']
-    
-    return {'stdout': '', 'stderr': 'Unknown error', 'returncode': -1}
+                    break
+        
+        # Get any remaining output
+        try:
+            remaining = child.read()
+            if remaining:
+                output_lines.append(remaining)
+                print(remaining, end='', flush=True)
+        except:
+            pass
+        
+        # Close and get exit code
+        try:
+            child.close()
+            exit_code = child.exitstatus if child.exitstatus is not None else 0
+        except:
+            exit_code = 0
+        
+        full_output = ''.join(output_lines)
+        
+        print(f"\n[Interactive Mode] Command completed with exit code {exit_code}")
+        
+        return {
+            'stdout': full_output,
+            'stderr': '',
+            'returncode': exit_code
+        }
+        
+    except ImportError:
+        return {
+            'stdout': '',
+            'stderr': 'Interactive mode requires wexpect on Windows. Install with: pip install wexpect',
+            'returncode': -1
+        }
+    except Exception as e:
+        import traceback
+        return {
+            'stdout': '',
+            'stderr': f'Interactive command failed: {str(e)}\n{traceback.format_exc()}',
+            'returncode': -1
+        }
 
 
 # --- Background Process Management ---
