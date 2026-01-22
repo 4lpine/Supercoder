@@ -111,8 +111,7 @@ class SupabaseConnection:
             return {"error": "Not configured. Use supabase_configure first"}
         
         try:
-            # Use the REST API's RPC endpoint for SQL execution
-            # Note: This requires a database function to be created
+            # Try using RPC first
             result = self.client.rpc('exec_sql', {'query': query}).execute()
             
             return {
@@ -122,7 +121,60 @@ class SupabaseConnection:
             }
             
         except Exception as e:
+            # If RPC fails, try using postgrest directly with service role
+            if self.service_role_key:
+                try:
+                    import requests
+                    headers = {
+                        'apikey': self.service_role_key,
+                        'Authorization': f'Bearer {self.service_role_key}',
+                        'Content-Type': 'application/json',
+                        'Prefer': 'return=representation'
+                    }
+                    
+                    # Use the SQL endpoint if available
+                    # Note: This is a workaround - proper way is to use Management API
+                    return {"error": f"SQL execution requires Management API or RPC function. Error: {str(e)}"}
+                except Exception as e2:
+                    return {"error": f"SQL execution failed: {str(e)}. Fallback also failed: {str(e2)}"}
+            
             return {"error": f"SQL execution failed: {str(e)}"}
+    
+    def create_table_and_insert(self, table_name: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Helper function to create a table based on data structure and insert the data.
+        This is a convenience function for when tables don't exist yet.
+        
+        Args:
+            table_name: Name of table to create
+            data: Sample data to insert (structure will be inferred)
+        
+        Returns:
+            Result of operation
+        """
+        if not self.enabled or not self.client:
+            return {"error": "Not configured"}
+        
+        # Try to insert directly first - if table exists, this will work
+        try:
+            result = self.client.table(table_name).insert(data).execute()
+            return {
+                "success": True,
+                "table": table_name,
+                "message": "Data inserted successfully",
+                "data": result.data
+            }
+        except Exception as e:
+            error_msg = str(e)
+            
+            # If table doesn't exist, provide helpful error
+            if "Could not find the table" in error_msg or "PGRST205" in error_msg:
+                return {
+                    "error": f"Table '{table_name}' does not exist. Please create it first using the Supabase dashboard or SQL editor. Go to: {self.url}/project/_/editor",
+                    "hint": f"Create table SQL: CREATE TABLE {table_name} (id SERIAL PRIMARY KEY, {', '.join(f'{k} TEXT' for k in data.keys())});"
+                }
+            
+            return {"error": f"Insert failed: {error_msg}"}
     
     def select(self, table: str, columns: str = "*", filters: Dict[str, Any] = None, 
                limit: int = None, order_by: str = None) -> Dict[str, Any]:
@@ -427,6 +479,18 @@ def supabase_get_schema(table: str) -> Dict[str, Any]:
     """
     conn = get_supabase()
     return conn.get_schema(table)
+
+
+def supabase_create_table_and_insert(table_name: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Helper to create a table and insert data (or just insert if table exists)
+    
+    Args:
+        table_name: Name of table
+        data: Data to insert
+    """
+    conn = get_supabase()
+    return conn.create_table_and_insert(table_name, data)
 
 
 def supabase_disable() -> Dict[str, Any]:

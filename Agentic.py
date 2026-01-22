@@ -151,6 +151,7 @@ NATIVE_TOOLS = [
     # Supabase Tools (using Python client)
     {"type": "function", "function": {"name": "supabaseStatus", "description": "Check if Supabase is configured and get connection status. ALWAYS call this FIRST before other Supabase operations to check if already configured.", "parameters": {"type": "object", "properties": {}}}},
     {"type": "function", "function": {"name": "supabaseConfigure", "description": "Configure Supabase connection with URL and keys", "parameters": {"type": "object", "properties": {"url": {"type": "string", "description": "Supabase project URL (https://xxx.supabase.co)"}, "anonKey": {"type": "string", "description": "Anon/public key"}, "serviceRoleKey": {"type": "string", "description": "Service role key (optional, for admin operations)"}}, "required": ["url", "anonKey"]}}},
+    {"type": "function", "function": {"name": "supabaseCreateTableAndInsert", "description": "Insert data into a table. If table doesn't exist, provides SQL to create it. Use this when you want to write data and aren't sure if table exists.", "parameters": {"type": "object", "properties": {"tableName": {"type": "string", "description": "Table name"}, "data": {"type": "object", "description": "Data to insert"}}, "required": ["tableName", "data"]}}},
     {"type": "function", "function": {"name": "supabaseSelect", "description": "Select data from a table", "parameters": {"type": "object", "properties": {"table": {"type": "string", "description": "Table name"}, "columns": {"type": "string", "description": "Columns to select (default: *)"}, "filters": {"type": "object", "description": "Dict of column: value filters"}, "limit": {"type": "integer", "description": "Max rows to return"}, "orderBy": {"type": "string", "description": "Column to order by"}}, "required": ["table"]}}},
     {"type": "function", "function": {"name": "supabaseInsert", "description": "Insert data into a table", "parameters": {"type": "object", "properties": {"table": {"type": "string", "description": "Table name"}, "data": {"type": ["object", "array"], "description": "Single dict or list of dicts to insert"}}, "required": ["table", "data"]}}},
     {"type": "function", "function": {"name": "supabaseUpdate", "description": "Update data in a table", "parameters": {"type": "object", "properties": {"table": {"type": "string", "description": "Table name"}, "data": {"type": "object", "description": "Data to update"}, "filters": {"type": "object", "description": "Dict of column: value filters"}}, "required": ["table", "data", "filters"]}}},
@@ -959,6 +960,8 @@ def execute_tool(tool_call: dict) -> str:
             return json.dumps(supabase_tools.supabase_status())
         elif name == "supabaseConfigure":
             return json.dumps(supabase_tools.supabase_configure(args["url"], args["anonKey"], args.get("serviceRoleKey")))
+        elif name == "supabaseCreateTableAndInsert":
+            return json.dumps(supabase_tools.supabase_create_table_and_insert(args["tableName"], args["data"]))
         elif name == "supabaseSelect":
             return json.dumps(supabase_tools.supabase_select(args["table"], args.get("columns", "*"), args.get("filters"), args.get("limit"), args.get("orderBy")))
         elif name == "supabaseInsert":
