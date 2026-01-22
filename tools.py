@@ -81,12 +81,11 @@ undo_manager = UndoManager()
 def execute_pwsh(command: str, timeout: int = 60) -> Dict[str, Any]:
     """
     Execute a shell command with automatic handling of interactive prompts.
-    Provides default responses to common prompts to prevent hanging.
+    Sends default responses to stdin to handle any interactive prompts.
     """
     import threading
-    import time
     
-    result_container = {'result': None, 'error': None, 'output': [], 'proc': None}
+    result_container = {'result': None, 'error': None, 'proc': None}
     
     def run_command():
         try:
@@ -97,127 +96,46 @@ def execute_pwsh(command: str, timeout: int = 60) -> Dict[str, Any]:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                bufsize=1,  # Line buffered
                 creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == 'win32' else 0
             )
             
             result_container['proc'] = proc
             
-            # Common interactive prompts and their default responses
-            auto_responses = {
-                'Would you like to': 'Y\n',
-                'Do you want to': 'Y\n',
-                'Continue?': 'Y\n',
-                'Proceed?': 'Y\n',
-                'Ok to proceed?': 'Y\n',
-                'Are you sure?': 'Y\n',
-                '(Y/n)': 'Y\n',
-                '(y/N)': 'Y\n',
-                '[Y/n]': 'Y\n',
-                '[y/N]': 'Y\n',
-                'Press any key': '\n',
-                'Enter to continue': '\n',
-                'TypeScript': 'Y\n',
-                'ESLint': 'Y\n',
-                'Tailwind': 'Y\n',
-                'App Router': 'Y\n',
-                'import alias': 'N\n',
-                'src/ directory': 'N\n',
-            }
+            # Prepare default responses for common interactive prompts
+            # Send multiple "Y" and Enter responses to handle any prompts
+            default_inputs = '\n'.join(['Y'] * 20 + [''] * 5) + '\n'
             
-            stdout_lines = []
-            stderr_lines = []
-            last_output_time = time.time()
-            
-            # Read output in non-blocking way
-            import select
-            
-            while True:
-                # Check if process has ended
-                if proc.poll() is not None:
-                    # Process ended, read remaining output
-                    remaining_out = proc.stdout.read()
-                    remaining_err = proc.stderr.read()
-                    if remaining_out:
-                        stdout_lines.append(remaining_out)
-                    if remaining_err:
-                        stderr_lines.append(remaining_err)
-                    break
-                
-                # Check for timeout
-                if time.time() - last_output_time > timeout:
-                    result_container['error'] = f'Command timed out after {timeout}s (no output)'
-                    break
-                
-                # Try to read output (non-blocking on Unix, polling on Windows)
+            try:
+                # Send inputs and wait for completion
+                stdout, stderr = proc.communicate(input=default_inputs, timeout=timeout)
+                result_container['result'] = {
+                    'stdout': stdout,
+                    'stderr': stderr,
+                    'returncode': proc.returncode
+                }
+            except subprocess.TimeoutExpired:
+                # Kill the process tree on timeout
+                if sys.platform == 'win32':
+                    subprocess.run(['taskkill', '/F', '/T', '/PID', str(proc.pid)], 
+                                 capture_output=True, timeout=5)
+                else:
+                    proc.kill()
                 try:
-                    if sys.platform == 'win32':
-                        # Windows: use peek to check if data available
-                        import msvcrt
-                        import ctypes
-                        
-                        # Just try to read with a short timeout
-                        line = proc.stdout.readline()
-                        if line:
-                            stdout_lines.append(line)
-                            last_output_time = time.time()
-                            
-                            # Check if line looks like a prompt
-                            line_lower = line.lower()
-                            for prompt, response in auto_responses.items():
-                                if prompt.lower() in line_lower:
-                                    # Send response
-                                    try:
-                                        proc.stdin.write(response)
-                                        proc.stdin.flush()
-                                    except:
-                                        pass
-                                    break
-                        
-                        # Check stderr too
-                        # Note: This is simplified, real implementation would need proper non-blocking I/O
-                        time.sleep(0.1)  # Small delay to prevent busy loop
-                        
-                    else:
-                        # Unix: use select
-                        readable, _, _ = select.select([proc.stdout, proc.stderr], [], [], 0.1)
-                        
-                        for stream in readable:
-                            line = stream.readline()
-                            if line:
-                                if stream == proc.stdout:
-                                    stdout_lines.append(line)
-                                else:
-                                    stderr_lines.append(line)
-                                last_output_time = time.time()
-                                
-                                # Check if line looks like a prompt
-                                line_lower = line.lower()
-                                for prompt, response in auto_responses.items():
-                                    if prompt.lower() in line_lower:
-                                        try:
-                                            proc.stdin.write(response)
-                                            proc.stdin.flush()
-                                        except:
-                                            pass
-                                        break
-                
-                except Exception as e:
-                    # If reading fails, just continue
-                    time.sleep(0.1)
-            
-            result_container['result'] = {
-                'stdout': ''.join(stdout_lines),
-                'stderr': ''.join(stderr_lines),
-                'returncode': proc.returncode if proc.poll() is not None else -1
-            }
-            
+                    stdout, stderr = proc.communicate(timeout=2)
+                    result_container['result'] = {
+                        'stdout': stdout,
+                        'stderr': stderr + f'\n[Timed out after {timeout}s]',
+                        'returncode': -1
+                    }
+                except:
+                    result_container['error'] = f'Command timed out after {timeout}s and was terminated'
+                    
         except Exception as e:
             result_container['error'] = str(e)
     
     thread = threading.Thread(target=run_command, daemon=True)
     thread.start()
-    thread.join(timeout=timeout + 10)  # Give extra time for cleanup
+    thread.join(timeout=timeout + 10)
     
     if thread.is_alive():
         # Thread is still running, try to kill process
