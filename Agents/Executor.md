@@ -197,16 +197,28 @@ Please carefully check all code for syntax errors, ensuring proper brackets, sem
 **Supabase Database Operations:**
 - Configuration is stored after user runs `supabase config` command
 - Call `supabaseStatus()` to check if configured and get database connection details
-- **For SQL operations (CREATE TABLE, INSERT, SELECT, etc.):**
-  1. Get credentials from `supabaseStatus()`
-  2. Use `executePwsh` with psql command:
+- **For SQL operations, use httpRequest with Supabase REST API (PostgREST):**
+  1. Get credentials from `supabaseStatus()` - you'll have url, service_role_key
+  2. Use httpRequest to interact with tables:
      ```python
-     # Example: Create table and insert data
-     executePwsh('psql "postgresql://postgres:PASSWORD@db.PROJECT.supabase.co:5432/postgres" -c "CREATE TABLE messages (id SERIAL PRIMARY KEY, text TEXT, created_at TIMESTAMP DEFAULT NOW()); INSERT INTO messages (text) VALUES (\'Hello World\');"')
+     # Create/insert data (POST)
+     httpRequest(
+       "POST",
+       "https://PROJECT.supabase.co/rest/v1/TABLE_NAME",
+       headers={"apikey": "SERVICE_ROLE_KEY", "Authorization": "Bearer SERVICE_ROLE_KEY", "Content-Type": "application/json", "Prefer": "return=representation"},
+       body='{"column1": "value1", "column2": "value2"}'
+     )
+     
+     # Select data (GET)
+     httpRequest(
+       "GET", 
+       "https://PROJECT.supabase.co/rest/v1/TABLE_NAME?select=*",
+       headers={"apikey": "SERVICE_ROLE_KEY", "Authorization": "Bearer SERVICE_ROLE_KEY"}
+     )
      ```
-  3. Replace PASSWORD and PROJECT with actual values from supabaseStatus()
-- **Important:** User needs to provide database password (different from API keys) - ask if not available
-- For simple operations, combine multiple SQL statements in one command separated by semicolons
+  3. **Important:** Tables must exist first - if table doesn't exist, tell user to create it in Supabase dashboard SQL editor
+  4. Provide the exact SQL for creating the table: `CREATE TABLE table_name (id SERIAL PRIMARY KEY, ...);`
+  5. Give user the dashboard link: `https://PROJECT.supabase.co/project/_/sql/new`
 
 KEY Supercoder FEATURES
 

@@ -393,14 +393,22 @@ def supabase_status() -> Dict[str, Any]:
         "has_db_password": bool(conn.db_password) if conn.enabled else False
     }
     
-    # Add database connection string if configured
-    if conn.enabled and conn.url:
+    # Add API keys for REST API usage
+    if conn.enabled:
+        result["anon_key"] = conn.anon_key
+        if conn.service_role_key:
+            result["service_role_key"] = conn.service_role_key
+        
+        # Add REST API endpoint
+        if conn.url:
+            result["rest_api_url"] = f"{conn.url}/rest/v1"
+            result["instructions"] = "Use httpRequest with REST API. For INSERT: POST to {rest_api_url}/table_name with headers apikey and Authorization (both set to service_role_key), body as JSON. For SELECT: GET from {rest_api_url}/table_name?select=*"
+    
+    # Add database connection string if password configured
+    if conn.enabled and conn.url and conn.db_password:
         project_ref = conn.url.replace("https://", "").replace(".supabase.co", "")
-        if conn.db_password:
-            result["database_url"] = f"postgresql://postgres:{conn.db_password}@db.{project_ref}.supabase.co:5432/postgres"
-        else:
-            result["database_url_template"] = f"postgresql://postgres:[DB_PASSWORD]@db.{project_ref}.supabase.co:5432/postgres"
-            result["note"] = "Database password not configured. User needs to provide it from Supabase dashboard > Settings > Database"
+        result["database_url"] = f"postgresql://postgres:{conn.db_password}@db.{project_ref}.supabase.co:5432/postgres"
+        result["sql_editor_url"] = f"{conn.url}/project/_/sql/new"
     
     return result
 
