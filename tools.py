@@ -6,10 +6,11 @@ import re
 import sys
 import json
 import subprocess
+import time
 import hashlib
 import threading
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -77,6 +78,30 @@ class UndoManager:
 
 undo_manager = UndoManager()
 
+# --- Streaming Output Hook ---
+_stream_handler = None
+
+def set_stream_handler(handler) -> None:
+    """Register a stream handler for interactive shell output."""
+    global _stream_handler
+    _stream_handler = handler
+
+def _stream_event(event: str, text: Any = None) -> None:
+    handler = _stream_handler
+    if handler:
+        try:
+            handler(event, text)
+            return
+        except Exception:
+            pass
+    if event == "output":
+        if text:
+            print(text, end='', flush=True)
+        return
+    label = event.upper()
+    msg = "" if text is None else str(text)
+    print(f"[{label}] {msg}")
+
 # --- Shell Execution ---
 def execute_pwsh(command: str, timeout: int = 60, interactive_responses: List[str] = None) -> Dict[str, Any]:
     """
@@ -124,63 +149,77 @@ def execute_pwsh(command: str, timeout: int = 60, interactive_responses: List[st
     
     # Interactive mode: use wexpect on Windows
     try:
+        import warnings
+        import time
+        warnings.filterwarnings(
+            "ignore",
+            message="pkg_resources is deprecated as an API.*",
+            category=UserWarning,
+        )
         import wexpect
         
-        print(f"\n[Interactive Mode] Starting command: {command}")
-        print(f"[Interactive Mode] Will send {len(interactive_responses)} responses")
+        print(f"\n[Interactive Mode] Starting: {command}")
+        
+        # Convert all responses to strings
+        responses = ["" if r is None else str(r) for r in interactive_responses]
+        print(f"[Interactive Mode] Will send {len(responses)} responses")
         
         # Spawn the command
         child = wexpect.spawn(f'cmd.exe /c {command}', timeout=timeout, encoding='utf-8', codec_errors='ignore')
         
         output_lines = []
         response_index = 0
+        last_output_time = time.time()
         
         while True:
             try:
                 # Wait for output with a short timeout
-                index = child.expect([r'.+[\r\n]', wexpect.TIMEOUT, wexpect.EOF], timeout=3)
-                
-                # Capture output
-                if child.before:
-                    output_lines.append(child.before)
-                    print(child.before, end='', flush=True)
+                index = child.expect([r'[\s\S]+', wexpect.EOF, wexpect.TIMEOUT], timeout=0.5)
                 
                 if index == 0:  # Got output
+                    if child.before:
+                        output_lines.append(child.before)
+                        print(child.before, end='', flush=True)
                     if child.after:
                         output_lines.append(child.after)
                         print(child.after, end='', flush=True)
-                    
-                    # Check if we should send a response
-                    # Look for common prompt patterns: ":", "?", ">"
-                    recent_output = (child.before or '') + (child.after or '')
-                    if response_index < len(interactive_responses) and any(p in recent_output for p in [':', '?', '>', '(', ')']):
-                        response = interactive_responses[response_index]
-                        print(f"\n[Sending {response_index + 1}/{len(interactive_responses)}]: '{response}'", flush=True)
-                        child.sendline(response)
-                        response_index += 1
+                    last_output_time = time.time()
                 
-                elif index == 1:  # Timeout - command might be waiting for input
-                    if response_index < len(interactive_responses):
-                        response = interactive_responses[response_index]
-                        print(f"\n[Timeout - Sending {response_index + 1}/{len(interactive_responses)}]: '{response}'", flush=True)
-                        child.sendline(response)
-                        response_index += 1
-                    else:
-                        # No more responses and got timeout, command might be done
-                        break
-                
-                elif index == 2:  # EOF - command finished
+                elif index == 1:  # EOF - command finished
+                    if child.before:
+                        output_lines.append(child.before)
+                        print(child.before, end='', flush=True)
                     break
-                    
+                
+                elif index == 2:  # Timeout - check if we should send a response
+                    # If we've been idle for a bit and have responses left, send one
+                    if response_index < len(responses):
+                        time_since_output = time.time() - last_output_time
+                        if time_since_output >= 0.3:  # 300ms idle = likely waiting for input
+                            response = responses[response_index]
+                            display = response if response else "<enter>"
+                            print(f"\n[Sending {response_index + 1}/{len(responses)}]: '{display}'", flush=True)
+                            child.sendline(response)
+                            response_index += 1
+                            last_output_time = time.time()
+                    elif time.time() - last_output_time > 2:
+                        # Been idle for 2+ seconds with no more responses - command might be done
+                        break
+                        
             except wexpect.EOF:
                 break
             except wexpect.TIMEOUT:
-                if response_index < len(interactive_responses):
-                    response = interactive_responses[response_index]
-                    print(f"\n[Timeout - Sending {response_index + 1}/{len(interactive_responses)}]: '{response}'", flush=True)
-                    child.sendline(response)
-                    response_index += 1
-                else:
+                # Check if we should send a response
+                if response_index < len(responses):
+                    time_since_output = time.time() - last_output_time
+                    if time_since_output >= 0.3:
+                        response = responses[response_index]
+                        display = response if response else "<enter>"
+                        print(f"\n[Sending {response_index + 1}/{len(responses)}]: '{display}'", flush=True)
+                        child.sendline(response)
+                        response_index += 1
+                        last_output_time = time.time()
+                elif time.time() - last_output_time > 2:
                     break
         
         # Get any remaining output
@@ -201,7 +240,7 @@ def execute_pwsh(command: str, timeout: int = 60, interactive_responses: List[st
         
         full_output = ''.join(output_lines)
         
-        print(f"\n[Interactive Mode] Command completed with exit code {exit_code}")
+        print(f"\n[Interactive Mode] Completed with exit code {exit_code}")
         
         return {
             'stdout': full_output,

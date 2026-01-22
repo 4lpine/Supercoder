@@ -145,13 +145,36 @@ Please carefully check all code for syntax errors, ensuring proper brackets, sem
 **COMMAND EXECUTION GUIDELINES**
 
 **Interactive Commands:**
-- ✅ **USE `executePwsh` with `interactiveResponses` parameter** for commands that prompt for input
+- ✅ **USE `executePwsh` with `interactiveResponses` parameter** for commands that prompt for input (responses send only when the prompt line ending with `:`, `?`, or `>` is shown and output pauses)
 - Examples:
   ```python
   executePwsh("npx create-next-app my-app", interactiveResponses=["Y","Y","Y","N","Y","N"])
-  executePwsh("npm init", interactiveResponses=["","","","","","","","","yes"])
+  executePwsh("npm init", interactiveResponses=["testing","","A simple app","","","Supercoder","MIT","","yes"])
   ```
-- The tool will show what responses are being sent and stream output in real-time
+- The tool sends the full response for each prompt in order and streams output in real-time
+- Use `""` to press Enter for defaults; include the final confirm (e.g., `yes`) if prompted
+- If a prompt repeats (input rejected), the tool retries the last response a few times before failing
+- If a prompt isn't detected (some CLIs don't flush prompts cleanly), list mode will send the next response after a short idle wait
+- You can also pass a prompt map instead of a list to reply by prompt name (order independent)
+  ```python
+  executePwsh(
+    "npm init",
+    interactiveResponses={
+      "package name": "testing",
+      "version": "",
+      "description": "A simple app",
+      "entry point": "index.js",
+      "test command": "",
+      "git repository": "",
+      "keywords": "",
+      "author": "Supercoder",
+      "license": "MIT",
+      "type": "commonjs",
+      "is this ok": "yes",
+      "*": ""
+    }
+  )
+  ```
 - **DO NOT use `requestUserCommand` for interactive commands** - you can handle them yourself!
 
 **Long-Running Processes:**
