@@ -2,19 +2,20 @@
 
 This guide teaches you how to build complete, production-ready web applications using Supercoder.
 
-## ⚠️ CRITICAL: Avoid Interactive Commands
+## ⚠️ CRITICAL: Interactive Commands
 
-**NEVER run interactive commands with `executePwsh`! They will hang and timeout.**
+**For interactive commands, use `executePwshInteractive` with explicit responses!**
 
-**Interactive commands to AVOID:**
-- ❌ `npx create-next-app` (without `--yes` flag)
-- ❌ `npm init`
-- ❌ Any command that prompts for user input
+**Example:**
+```typescript
+executePwshInteractive(
+  "npx create-next-app@latest my-app",
+  responses=["Y", "Y", "Y", "N", "Y", "N"]
+  // TypeScript? Y, ESLint? Y, Tailwind? Y, src/? N, App Router? Y, alias? N
+)
+```
 
-**Always use non-interactive flags:**
-- ✅ `npx create-next-app@latest app-name --typescript --tailwind --app --yes`
-- ✅ `npm install package-name` (no prompts)
-- ✅ Use `controlPwshProcess` for long-running servers (npm run dev)
+**DO NOT use regular `executePwsh` for interactive commands - it will hang!**
 
 ## Recognizing Web App Prompts
 
@@ -149,11 +150,20 @@ CREATE POLICY "Authenticated users can create messages" ON messages FOR INSERT W
 
 **Create Next.js project:**
 ```bash
-npx create-next-app@latest my-app --typescript --tailwind --app --no-src-dir --import-alias "@/*" --use-npm --yes
+executePwshInteractive(
+  "npx create-next-app@latest my-app",
+  responses=["Y", "Y", "Y", "N", "Y", "N"]
+)
 cd my-app
 ```
 
-**CRITICAL: Always use `--yes` flag to skip interactive prompts!**
+**Responses explained:**
+- Y = TypeScript
+- Y = ESLint
+- Y = Tailwind CSS
+- N = src/ directory
+- Y = App Router
+- N = Import alias
 
 **Install dependencies:**
 ```bash
