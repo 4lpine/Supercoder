@@ -93,8 +93,7 @@ class TokenCounter:
 
 # --- Native Tool Definitions ---
 NATIVE_TOOLS = [
-    {"type": "function", "function": {"name": "executePwsh", "description": "Execute a shell command", "parameters": {"type": "object", "properties": {"command": {"type": "string", "description": "Command to execute"}, "timeout": {"type": "integer", "description": "Timeout in seconds (default 60)"}}, "required": ["command"]}}},
-    {"type": "function", "function": {"name": "executePwshInteractive", "description": "Execute an interactive command that prompts for input. Provide the responses you want to give. Example: npx create-next-app with responses=['Y','Y','Y','N','Y','N'] for TypeScript/ESLint/Tailwind/src/AppRouter/alias", "parameters": {"type": "object", "properties": {"command": {"type": "string", "description": "Command to execute"}, "responses": {"type": "array", "items": {"type": "string"}, "description": "List of responses to provide to prompts (in order)"}, "timeout": {"type": "integer", "description": "Timeout in seconds (default 120)"}}, "required": ["command", "responses"]}}},
+    {"type": "function", "function": {"name": "executePwsh", "description": "Execute a shell command. For interactive commands, provide responses array. Output streams in real-time.", "parameters": {"type": "object", "properties": {"command": {"type": "string", "description": "Command to execute"}, "timeout": {"type": "integer", "description": "Timeout in seconds (default 60)"}, "interactiveResponses": {"type": "array", "items": {"type": "string"}, "description": "Optional: responses for interactive prompts (e.g., ['Y','Y','N'] for yes/yes/no)"}}, "required": ["command"]}}},
     {"type": "function", "function": {"name": "controlPwshProcess", "description": "Start or stop background processes", "parameters": {"type": "object", "properties": {"action": {"type": "string", "enum": ["start", "stop"], "description": "Action to perform"}, "command": {"type": "string", "description": "Command to run (for start)"}, "processId": {"type": "integer", "description": "Process ID (for stop)"}, "path": {"type": "string", "description": "Working directory (for start)"}}, "required": ["action"]}}},
     {"type": "function", "function": {"name": "listProcesses", "description": "List running background processes", "parameters": {"type": "object", "properties": {}, "required": []}}},
     {"type": "function", "function": {"name": "getProcessOutput", "description": "Get output from a background process", "parameters": {"type": "object", "properties": {"processId": {"type": "integer", "description": "Process ID"}, "lines": {"type": "integer", "description": "Number of lines to return"}}, "required": ["processId"]}}},
@@ -743,7 +742,7 @@ class Agent:
 def execute_tool(tool_call: dict) -> str:
     """Execute a tool call and return result"""
     from tools import (
-        execute_pwsh, execute_pwsh_interactive, control_pwsh_process, list_processes, get_process_output,
+        execute_pwsh, control_pwsh_process, list_processes, get_process_output,
         list_directory, read_file, read_multiple_files, read_code, file_search, grep_search,
         delete_file, fs_write, fs_append, str_replace, get_diagnostics, property_coverage,
         insert_lines, remove_lines, move_file, copy_file, create_directory, undo,
@@ -778,10 +777,11 @@ def execute_tool(tool_call: dict) -> str:
 
     try:
         if name == "executePwsh":
-            result = execute_pwsh(args["command"], args.get("timeout", 60))
-            return f"stdout: {result['stdout']}\nstderr: {result['stderr']}\nreturncode: {result['returncode']}"
-        elif name == "executePwshInteractive":
-            result = execute_pwsh_interactive(args["command"], args["responses"], args.get("timeout", 120))
+            result = execute_pwsh(
+                args["command"], 
+                args.get("timeout", 60),
+                args.get("interactiveResponses")
+            )
             return f"stdout: {result['stdout']}\nstderr: {result['stderr']}\nreturncode: {result['returncode']}"
         elif name == "controlPwshProcess":
             return json.dumps(control_pwsh_process(args["action"], args.get("command"), args.get("processId"), args.get("path")))
