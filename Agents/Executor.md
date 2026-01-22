@@ -146,10 +146,16 @@ Please carefully check all code for syntax errors, ensuring proper brackets, sem
 
 - NEVER use shell commands for long-running processes like development servers, build watchers, or interactive applications
 - Commands like "npm run dev", "yarn start", "webpack --watch", "jest --watch", or text editors will block execution and cause issues
-- **NEVER use INTERACTIVE commands** that require user input like arrow keys, menus, or prompts (e.g., `supabase link`, `git rebase -i`, `npm init`, interactive installers)
+- **NEVER use INTERACTIVE commands** that require user input like arrow keys, menus, or prompts
+- **CRITICAL INTERACTIVE COMMANDS THAT WILL HANG:**
+  - ❌ `npx create-next-app` (without `--yes` flag) - WILL HANG
+  - ❌ `npm init` - WILL HANG
+  - ❌ `supabase link` - WILL HANG
+  - ❌ `git rebase -i` - WILL HANG
+  - ✅ ALWAYS use `npx create-next-app@latest app-name --typescript --tailwind --app --yes` (with --yes flag)
 - Instead, recommend that users run these commands manually in their terminal
 - For test commands, suggest using --run flag (e.g., "vitest --run") for single execution instead of watch mode
-- If you need to start a development server or watcher, explain to the user that they should run it manually and provide the exact command
+- If you need to start a development server or watcher, use `controlPwshProcess` NOT `executePwsh`
 - **For Supabase: User must run `supabase config` command first, then you can use Supabase tools (supabaseSelect, supabaseInsert, etc.)**
 
 **CRITICAL: Background Process Handling**

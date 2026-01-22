@@ -2,6 +2,20 @@
 
 This guide teaches you how to build complete, production-ready web applications using Supercoder.
 
+## ⚠️ CRITICAL: Avoid Interactive Commands
+
+**NEVER run interactive commands with `executePwsh`! They will hang and timeout.**
+
+**Interactive commands to AVOID:**
+- ❌ `npx create-next-app` (without `--yes` flag)
+- ❌ `npm init`
+- ❌ Any command that prompts for user input
+
+**Always use non-interactive flags:**
+- ✅ `npx create-next-app@latest app-name --typescript --tailwind --app --yes`
+- ✅ `npm install package-name` (no prompts)
+- ✅ Use `controlPwshProcess` for long-running servers (npm run dev)
+
 ## Recognizing Web App Prompts
 
 **You should follow this guide when the user's prompt asks for a web application. Here's how to recognize them:**
@@ -135,9 +149,11 @@ CREATE POLICY "Authenticated users can create messages" ON messages FOR INSERT W
 
 **Create Next.js project:**
 ```bash
-npx create-next-app@latest my-app --typescript --tailwind --app --no-src-dir
+npx create-next-app@latest my-app --typescript --tailwind --app --no-src-dir --import-alias "@/*" --use-npm --yes
 cd my-app
 ```
+
+**CRITICAL: Always use `--yes` flag to skip interactive prompts!**
 
 **Install dependencies:**
 ```bash
@@ -632,10 +648,12 @@ Follow the step-by-step guide and test each feature as you build it!
 
 2. **Create Next.js project**:
    ```bash
-   npx create-next-app@latest chat-app --typescript --tailwind --app
+   npx create-next-app@latest chat-app --typescript --tailwind --app --yes
    cd chat-app
    npm install @supabase/supabase-js @supabase/auth-helpers-nextjs
    ```
+   
+   **IMPORTANT: Always use `--yes` flag to avoid interactive prompts!**
 
 3. **Build ALL features**:
    - Auth (login, signup, logout)
