@@ -405,7 +405,7 @@ def supabase_status() -> Dict[str, Any]:
     return result
 
 
-def supabase_configure(url: str, anon_key: str, service_role_key: str = None) -> Dict[str, Any]:
+def supabase_configure(url: str, anon_key: str, service_role_key: str = None, db_password: str = None) -> Dict[str, Any]:
     """
     Configure Supabase connection
     
@@ -413,9 +413,10 @@ def supabase_configure(url: str, anon_key: str, service_role_key: str = None) ->
         url: Supabase project URL (https://xxx.supabase.co)
         anon_key: Anon/public key
         service_role_key: Service role key (optional, for admin operations)
+        db_password: Database password (optional, for direct PostgreSQL access)
     """
     conn = get_supabase()
-    return conn.configure(url, anon_key, service_role_key)
+    return conn.configure(url, anon_key, service_role_key, db_password)
 
 
 def supabase_select(table: str, columns: str = "*", filters: Dict[str, Any] = None, 
