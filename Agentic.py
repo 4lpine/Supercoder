@@ -93,7 +93,7 @@ class TokenCounter:
 
 # --- Native Tool Definitions ---
 NATIVE_TOOLS = [
-    {"type": "function", "function": {"name": "executePwsh", "description": "Execute a shell command. For interactive commands, provide responses list or map. Output streams in real-time.", "parameters": {"type": "object", "properties": {"command": {"type": "string", "description": "Command to execute"}, "timeout": {"type": "integer", "description": "Timeout in seconds (default 60)"}, "interactiveResponses": {"type": ["array", "object"], "items": {"type": "string"}, "additionalProperties": {"type": "string"}, "description": "Optional: list of responses (e.g., ['Y','Y','N']) or map of prompt->response (e.g., {'package name': 'my-app', 'license': 'MIT', '*': ''})"}}, "required": ["command"]}}},
+    {"type": "function", "function": {"name": "executePwsh", "description": "Execute a shell command. Automatically handles interactive prompts; if input is needed, returns status=need_input with sessionId + prompt. Resume by calling with sessionId + input.", "parameters": {"type": "object", "properties": {"command": {"type": "string", "description": "Command to execute (required for new sessions)"}, "timeout": {"type": "integer", "description": "Timeout in seconds (default 60)"}, "interactiveResponses": {"type": ["array", "object"], "items": {"type": "string"}, "additionalProperties": {"type": "string"}, "description": "Optional: list of responses (e.g., ['Y','Y','N']) or map of prompt->response (e.g., {'package name': 'my-app', 'license': 'MIT', '*': ''})"}, "sessionId": {"type": "integer", "description": "Continue an interactive session (from status=need_input)"}, "input": {"type": "string", "description": "One line of input to send to an interactive session"}}, "required": []}}},
     {"type": "function", "function": {"name": "controlPwshProcess", "description": "Start or stop background processes", "parameters": {"type": "object", "properties": {"action": {"type": "string", "enum": ["start", "stop"], "description": "Action to perform"}, "command": {"type": "string", "description": "Command to run (for start)"}, "processId": {"type": "integer", "description": "Process ID (for stop)"}, "path": {"type": "string", "description": "Working directory (for start)"}}, "required": ["action"]}}},
     {"type": "function", "function": {"name": "listProcesses", "description": "List running background processes", "parameters": {"type": "object", "properties": {}, "required": []}}},
     {"type": "function", "function": {"name": "getProcessOutput", "description": "Get output from a background process", "parameters": {"type": "object", "properties": {"processId": {"type": "integer", "description": "Process ID"}, "lines": {"type": "integer", "description": "Number of lines to return"}}, "required": ["processId"]}}},
@@ -752,12 +752,20 @@ def execute_tool(tool_call: dict) -> str:
     args = tool_call.get("args", {})
 
     REQUIRED_PARAMS = {
-        "executePwsh": ["command"], "readFile": ["path"], "fsWrite": ["path", "content"],
+        "readFile": ["path"], "fsWrite": ["path", "content"],
         "fsAppend": ["path", "content"], "strReplace": ["path", "old", "new"],
         "deleteFile": ["path"], "getDiagnostics": ["path"], "fileSearch": ["pattern"],
         "grepSearch": ["pattern"], "getProcessOutput": ["processId"], "controlPwshProcess": ["action"],
         "interactWithUser": ["message", "interactionType"],
     }
+
+    if name == "executePwsh":
+        if not args.get("command") and not args.get("sessionId"):
+            return (
+                "ERROR: executePwsh requires 'command' for new sessions "
+                "or 'sessionId' to continue. You provided: "
+                f"{list(args.keys())}."
+            )
 
     if name in REQUIRED_PARAMS:
         missing = [p for p in REQUIRED_PARAMS[name] if p not in args or args[p] is None]
@@ -767,11 +775,24 @@ def execute_tool(tool_call: dict) -> str:
     try:
         if name == "executePwsh":
             result = execute_pwsh(
-                args["command"], 
+                args.get("command"),
                 args.get("timeout", 60),
-                args.get("interactiveResponses")
+                args.get("interactiveResponses"),
+                args.get("sessionId"),
+                args.get("input"),
             )
-            return f"stdout: {result['stdout']}\nstderr: {result['stderr']}\nreturncode: {result['returncode']}"
+            lines = [
+                f"stdout: {result.get('stdout', '')}",
+                f"stderr: {result.get('stderr', '')}",
+                f"returncode: {result.get('returncode', '')}",
+            ]
+            if "status" in result:
+                lines.append(f"status: {result.get('status', '')}")
+            if "sessionId" in result and result.get("sessionId") is not None:
+                lines.append(f"sessionId: {result.get('sessionId')}")
+            if "prompt" in result and result.get("prompt"):
+                lines.append(f"prompt: {result.get('prompt')}")
+            return "\n".join(lines)
         elif name == "controlPwshProcess":
             return json.dumps(control_pwsh_process(args["action"], args.get("command"), args.get("processId"), args.get("path")))
         elif name == "listProcesses":

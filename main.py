@@ -69,25 +69,23 @@ _CMD_SEP_RE = re.compile(r'\s*(?:&&|\|\|)\s*|\s&\s')
 def _sanitize_cmd(cmd: str) -> str:
     return _CMD_SEP_RE.sub('; ', str(cmd).strip())
 
-def _execute_pwsh_patched(command: str, timeout: int = 60, interactive_responses: List[str] = None) -> Dict[str, Any]:
-    if interactive_responses:
-        orig = getattr(tools, "_orig_execute_pwsh", None)
-        return (
-            orig(command, timeout=timeout, interactive_responses=interactive_responses)
-            if callable(orig)
-            else {"stdout": "", "stderr": "not available", "returncode": 1}
-        )
-    if os.name == "nt" and _PS_EXE:
-        args = [_PS_EXE, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", _sanitize_cmd(command)]
-        try:
-            r = subprocess.run(args, capture_output=True, text=True, timeout=timeout, cwd=os.getcwd())
-            return {"stdout": r.stdout, "stderr": r.stderr, "returncode": r.returncode}
-        except subprocess.TimeoutExpired as e:
-            return {"stdout": getattr(e, 'stdout', '') or '', "stderr": f"Timed out after {timeout}s", "returncode": -1}
-        except Exception as e:
-            return {"stdout": "", "stderr": str(e), "returncode": 1}
+def _execute_pwsh_patched(
+    command: str = None,
+    timeout: int = 60,
+    interactive_responses: Any = None,
+    session_id: int = None,
+    input_text: str = None,
+) -> Dict[str, Any]:
     orig = getattr(tools, "_orig_execute_pwsh", None)
-    return orig(command, timeout=timeout) if callable(orig) else {"stdout": "", "stderr": "not available", "returncode": 1}
+    if callable(orig):
+        return orig(
+            command=command,
+            timeout=timeout,
+            interactive_responses=interactive_responses,
+            session_id=session_id,
+            input_text=input_text,
+        )
+    return {"stdout": "", "stderr": "not available", "returncode": 1}
 
 def _control_pwsh_patched(action: str, command: str = None, process_id: int = None, path: str = None) -> Dict[str, Any]:
     if os.name == "nt" and _PS_EXE:
@@ -142,7 +140,7 @@ def status(msg: str, level: str = "info") -> None:
     c, p = _STATUS.get(level, (C.BLUE, "[i]"))
     print(_s(f"  {p} {msg}", c))
 
-_SHELL_STREAM_STATE = {"buffer": "", "active": False, "header_sep": False}
+_SHELL_STREAM_STATE = {"buffer": "", "active": False, "header_sep": False, "last_line": "", "empty_streak": 0}
 _SHELL_BOX_WIDTH = 70
 
 def _shell_box_top() -> None:
@@ -178,6 +176,8 @@ def _shell_stream(event: str, text: Any = None) -> None:
         _SHELL_STREAM_STATE["buffer"] = ""
         _SHELL_STREAM_STATE["active"] = True
         _SHELL_STREAM_STATE["header_sep"] = True
+        _SHELL_STREAM_STATE["last_line"] = ""
+        _SHELL_STREAM_STATE["empty_streak"] = 0
         cmd = "" if text is None else str(text)
         _shell_box_top()
         _shell_box_line(f"{C.BYELLOW}SHELL:{C.RST} {C.CYAN}{cmd}{C.RST}")
@@ -207,8 +207,34 @@ def _shell_stream(event: str, text: Any = None) -> None:
             _shell_ensure_body()
             if line:
                 _shell_box_line(_style_shell_line(line))
+                _SHELL_STREAM_STATE["last_line"] = line
+                _SHELL_STREAM_STATE["empty_streak"] = 0
             else:
-                _shell_box_line()
+                if _SHELL_STREAM_STATE["empty_streak"] == 0:
+                    _shell_box_line()
+                _SHELL_STREAM_STATE["empty_streak"] += 1
+        return
+    if event == "pause":
+        buf = _SHELL_STREAM_STATE.get("buffer", "")
+        if buf:
+            _shell_ensure_body()
+            _shell_box_line(_style_shell_line(buf))
+            _SHELL_STREAM_STATE["buffer"] = ""
+            _SHELL_STREAM_STATE["last_line"] = buf
+            _SHELL_STREAM_STATE["empty_streak"] = 0
+        _shell_ensure_body()
+        prompt_text = "" if text is None else str(text)
+        prompt_label = re.split(r"[:?>]", prompt_text, 1)[0].strip() if prompt_text else ""
+        last_line = _SHELL_STREAM_STATE.get("last_line", "")
+        show_label = prompt_label if prompt_label and len(prompt_label) <= 40 else ""
+        if last_line and prompt_text and prompt_text.strip() in last_line:
+            show_label = ""
+        if show_label:
+            _shell_box_line(f"{C.BYELLOW}INPUT:{C.RST} {C.CYAN}{show_label}{C.RST}")
+        else:
+            _shell_box_line(f"{C.BYELLOW}INPUT:{C.RST}")
+        _shell_box_bottom()
+        _SHELL_STREAM_STATE["active"] = False
         return
     if event == "end":
         buf = _SHELL_STREAM_STATE.get("buffer", "")
@@ -442,8 +468,8 @@ class State:
     auto_mode: bool = True
     auto_cap: int = 50
     auto_steps: int = 0
-    compact: bool = False
-    verbose: bool = True
+    compact: bool = True
+    verbose: bool = False
     verify_mode: str = "py_compile"
     verify_cmd: Optional[str] = None
     verify_summary: str = ""
@@ -529,26 +555,38 @@ def _to_str(val: Any, join_lists: bool = False) -> str:
         return str(val)
 
 def _parse_execute_pwsh_result(result: str) -> Dict[str, str]:
-    parsed = {"stdout": "", "stderr": "", "returncode": ""}
+    parsed = {
+        "stdout": "",
+        "stderr": "",
+        "returncode": "",
+        "status": "",
+        "sessionId": "",
+        "prompt": "",
+    }
     if not result:
         return parsed
-    if result.startswith("stdout:"):
-        parts = result.split("\nstderr:", 1)
-        parsed["stdout"] = parts[0][len("stdout:"):].lstrip()
-        if len(parts) > 1:
-            rest = parts[1]
-            parts2 = rest.split("\nreturncode:", 1)
-            parsed["stderr"] = parts2[0].lstrip()
-            if len(parts2) > 1:
-                parsed["returncode"] = parts2[1].strip()
-        return parsed
+    current = None
     for line in result.splitlines():
         if line.startswith("stdout:"):
-            parsed["stdout"] = line[len("stdout:"):].lstrip()
+            current = "stdout"
+            parsed[current] = line[len("stdout:"):].lstrip()
         elif line.startswith("stderr:"):
-            parsed["stderr"] = line[len("stderr:"):].lstrip()
+            current = "stderr"
+            parsed[current] = line[len("stderr:"):].lstrip()
         elif line.startswith("returncode:"):
-            parsed["returncode"] = line[len("returncode:"):].lstrip()
+            current = "returncode"
+            parsed[current] = line[len("returncode:"):].lstrip()
+        elif line.startswith("status:"):
+            current = "status"
+            parsed[current] = line[len("status:"):].lstrip()
+        elif line.startswith("sessionId:"):
+            current = "sessionId"
+            parsed[current] = line[len("sessionId:"):].lstrip()
+        elif line.startswith("prompt:"):
+            current = "prompt"
+            parsed[current] = line[len("prompt:"):].lstrip()
+        elif current:
+            parsed[current] += ("\n" if parsed[current] else "") + line
     return parsed
 
 def _syntax_highlight(code: str, filename: str = "") -> str:
@@ -589,13 +627,18 @@ def print_tool(name: str, args: Dict[str, Any], result: str, compact: bool = Tru
     
     # Convert result to string if needed
     result = _to_str(result)
-    interactive = name == "executePwsh" and args.get("interactiveResponses")
+    interactive = name == "executePwsh"
     if interactive and getattr(tools, "_stream_handler", None):
         parsed = _parse_execute_pwsh_result(result)
         summary_lines = ["stdout: (streamed)"]
+        status_val = parsed.get("status")
+        if status_val:
+            summary_lines.append(f"status: {status_val}")
+        if parsed.get("sessionId"):
+            summary_lines.append(f"sessionId: {parsed['sessionId']}")
         if parsed.get("stderr"):
             summary_lines.append(f"stderr: {parsed['stderr']}")
-        if parsed.get("returncode"):
+        if parsed.get("returncode") and status_val in ("completed", "error"):
             summary_lines.append(f"returncode: {parsed['returncode']}")
         result = "\n".join(summary_lines)
     

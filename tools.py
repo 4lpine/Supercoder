@@ -6,6 +6,7 @@ import re
 import sys
 import json
 import subprocess
+import shutil
 import time
 import hashlib
 import threading
@@ -102,165 +103,473 @@ def _stream_event(event: str, text: Any = None) -> None:
     msg = "" if text is None else str(text)
     print(f"[{label}] {msg}")
 
+# --- Interactive Session Support ---
+_INTERACTIVE_SESSIONS: Dict[int, Dict[str, Any]] = {}
+_INTERACTIVE_SESSION_COUNTER = 0
+_PROMPT_TOKEN_RE = re.compile(
+    r'(?<!")(?P<label>[A-Za-z][^:\r\n]{0,60})(?P<punct>[:?>])\s*(?P<default>\([^\r\n]*?\))?'
+)
+_CMD_SEP_RE = re.compile(r'\s*(?:&&|\|\|)\s*|\s&\s')
+_PROMPT_IDLE_TIMEOUT = 1.0
+
+def _next_interactive_session_id() -> int:
+    global _INTERACTIVE_SESSION_COUNTER
+    _INTERACTIVE_SESSION_COUNTER += 1
+    return _INTERACTIVE_SESSION_COUNTER
+
+def _detect_ps_exe() -> Optional[str]:
+    if os.name != "nt":
+        return None
+    if shutil.which("pwsh"):
+        return "pwsh"
+    if shutil.which("powershell"):
+        return "powershell"
+    return None
+
+_PS_EXE = _detect_ps_exe()
+
+def _sanitize_cmd(cmd: str) -> str:
+    return _CMD_SEP_RE.sub("; ", str(cmd).strip())
+
+def _build_shell_command(command: str, interactive: bool = False) -> str:
+    if os.name == "nt":
+        if _PS_EXE:
+            sanitized = _sanitize_cmd(command)
+            sanitized = sanitized.replace('"', '`"')
+            flags = "-NoProfile -ExecutionPolicy Bypass"
+            if not interactive:
+                flags = f"{flags} -NonInteractive"
+            return f'{_PS_EXE} {flags} -Command "{sanitized}"'
+        return f'cmd.exe /c {command}'
+    return command
+
+def _normalize_key(label: str) -> str:
+    return re.sub(r'\s+', ' ', label).strip().lower()
+
+def _is_prompt_label(label: str) -> bool:
+    if not label:
+        return False
+    trimmed = label.strip()
+    if len(trimmed) < 2 or len(trimmed) > 40:
+        return False
+    lower = trimmed.lower()
+    if lower.startswith(("about to write to", "press ^c", "see `", "use `")):
+        return False
+    if "\\" in trimmed or "/" in trimmed:
+        return False
+    return True
+
+def _clean_prompt_label(label: str, last_response: Optional[str]) -> str:
+    cleaned = (label or "").strip()
+    if last_response:
+        if last_response in cleaned:
+            cleaned = cleaned.split(last_response)[-1].strip()
+    if "  " in cleaned:
+        cleaned = re.split(r"\s{2,}", cleaned)[-1].strip()
+    if cleaned and len(cleaned) > 40:
+        cleaned = cleaned.split()[-1]
+    return cleaned
+
+def _lookup_response(response_map: Optional[Dict[str, str]], prompt_key: str, prompt_line: str) -> Tuple[Optional[str], str]:
+    if not response_map:
+        return None, ""
+    if prompt_key in response_map:
+        return response_map[prompt_key], prompt_key
+    if prompt_line:
+        best_key = ""
+        normalized_line = _normalize_key(prompt_line)
+        for key in response_map.keys():
+            if key in ("", "default", "*"):
+                continue
+            if key and key in normalized_line:
+                if len(key) > len(best_key):
+                    best_key = key
+        if best_key:
+            return response_map[best_key], best_key
+    if "*" in response_map:
+        return response_map["*"], "*"
+    if "default" in response_map:
+        return response_map["default"], "default"
+    return None, ""
+
+def _session_set_pending_prompt(session: Dict[str, Any], prompt_key: str, prompt_text: str) -> None:
+    last_key = session.get("last_prompt_key", "")
+    last_text = session.get("last_prompt_text", "")
+    if prompt_key == last_key and prompt_text == last_text:
+        session["repeat_count"] = session.get("repeat_count", 0) + 1
+    else:
+        session["repeat_count"] = 0
+    session["pending_prompt"] = (prompt_key, prompt_text)
+    session["pending_since"] = time.monotonic()
+    session["last_prompt_key"] = prompt_key
+    session["last_prompt_text"] = prompt_text
+    session["saw_prompt"] = True
+
+def _session_append_output(session: Dict[str, Any], text: Any) -> None:
+    if not text:
+        return
+    if not isinstance(text, str):
+        text = str(text)
+    session["output_lines"].append(text)
+    session["full_output"] += text
+    _stream_event("output", text)
+    session["scan_buffer"] += text
+    session["last_output_time"] = time.monotonic()
+    _session_scan_prompts(session)
+
+def _session_scan_prompts(session: Dict[str, Any]) -> None:
+    scan_buffer = session["scan_buffer"]
+    scan_pos = session["scan_pos"]
+    if len(scan_buffer) > 8000:
+        excess = len(scan_buffer) - 8000
+        scan_buffer = scan_buffer[excess:]
+        scan_pos = max(0, scan_pos - excess)
+    scan_start = max(0, scan_pos - 200)
+    last_prompt = None
+    for match in _PROMPT_TOKEN_RE.finditer(scan_buffer, scan_start):
+        if match.end() <= scan_pos:
+            continue
+        raw_label = match.group("label").strip()
+        label = _clean_prompt_label(raw_label, session.get("last_response"))
+        if not _is_prompt_label(label):
+            continue
+        key = _normalize_key(label)
+        punct = match.group("punct")
+        default = match.group("default") or ""
+        prompt_text = f"{label}{punct} {default}".strip()
+        last_prompt = (key, prompt_text)
+    if last_prompt:
+        _session_set_pending_prompt(session, last_prompt[0], last_prompt[1])
+    session["scan_buffer"] = scan_buffer
+    session["scan_pos"] = len(scan_buffer)
+
 # --- Shell Execution ---
-def execute_pwsh(command: str, timeout: int = 60, interactive_responses: List[str] = None) -> Dict[str, Any]:
+def execute_pwsh(
+    command: Optional[str] = None,
+    timeout: int = 60,
+    interactive_responses: Optional[Any] = None,
+    session_id: Optional[int] = None,
+    input_text: Optional[str] = None,
+) -> Dict[str, Any]:
     """
     Execute a shell command with optional interactive response handling.
-    
-    For interactive commands (like npm init), provide responses as a list.
-    Each response will be sent when the command prompts for input.
-    
+
+    If the command prompts for input, the tool returns status=need_input with
+    a sessionId and prompt. Call execute_pwsh again with session_id + input_text.
+
     Args:
-        command: Command to execute
-        timeout: Timeout in seconds
-        interactive_responses: List of responses to send sequentially (e.g., ["testing", "", "A simple app", ...])
-    
+        command: Command to execute (required for new sessions)
+        timeout: Timeout in seconds for this call
+        interactive_responses: Optional list or map of responses for auto-reply
+        session_id: Continue an interactive session
+        input_text: One line of input to send to an existing session
+
     Returns:
-        Dict with stdout, stderr, returncode
+        Dict with stdout, stderr, returncode, status, and optional sessionId/prompt
     """
-    if not interactive_responses:
-        # Non-interactive: simple subprocess execution
+    wexpect = None
+    if os.name == "nt":
         try:
+            import warnings
+            warnings.filterwarnings(
+                "ignore",
+                message="pkg_resources is deprecated as an API.*",
+                category=UserWarning,
+            )
+            import wexpect as _wexpect
+            wexpect = _wexpect
+        except ImportError:
+            wexpect = None
+
+    def _normalize_response_map(data: Dict[str, Any]) -> Dict[str, str]:
+        normalized: Dict[str, str] = {}
+        for key, val in data.items():
+            if key is None:
+                continue
+            norm_key = _normalize_key(str(key))
+            normalized[norm_key] = "" if val is None else str(val)
+        return normalized
+
+    def _apply_responses(session: Dict[str, Any], responses: Any) -> None:
+        session["response_list"] = None
+        session["response_map"] = None
+        session["response_index"] = 0
+        session["last_response"] = None
+        session["repeat_count"] = 0
+        if isinstance(responses, dict):
+            session["response_map"] = _normalize_response_map(responses)
+        elif isinstance(responses, (list, tuple)):
+            session["response_list"] = ["" if r is None else str(r) for r in responses]
+
+    def _send_input(session: Dict[str, Any], response: Optional[str]) -> None:
+        text = "" if response is None else str(response)
+        display = text if text else "<enter>"
+        _stream_event("send", display)
+        session["child"].sendline(text)
+        now = time.monotonic()
+        session["last_send_time"] = now
+        session["last_output_time"] = now
+        session["last_response"] = text
+        session["pending_prompt"] = None
+        session["pending_since"] = None
+
+    def _next_auto_response(session: Dict[str, Any], prompt_key: str, prompt_text: str) -> Optional[str]:
+        response_map = session.get("response_map")
+        if response_map:
+            response, _ = _lookup_response(response_map, prompt_key, prompt_text)
+            return response
+        response_list = session.get("response_list")
+        if response_list is None:
+            return None
+        repeat_count = session.get("repeat_count", 0)
+        last_response = session.get("last_response")
+        if repeat_count > 0 and last_response is not None and repeat_count <= 2:
+            return last_response
+        index = session.get("response_index", 0)
+        if index >= len(response_list):
+            return None
+        session["response_index"] = index + 1
+        return response_list[index]
+
+    def _finish_session(session: Dict[str, Any], exit_code: int) -> Dict[str, Any]:
+        try:
+            session["child"].close()
+        except Exception:
+            pass
+        _INTERACTIVE_SESSIONS.pop(session["id"], None)
+        _stream_event("end", exit_code)
+        return {
+            "stdout": session.get("full_output", ""),
+            "stderr": "",
+            "returncode": exit_code,
+            "status": "completed",
+        }
+
+    def _run_interactive(session: Dict[str, Any], timeout_sec: int) -> Dict[str, Any]:
+        deadline = time.monotonic() + timeout_sec if timeout_sec and timeout_sec > 0 else None
+        child = session["child"]
+        while True:
+            if deadline is not None and time.monotonic() >= deadline:
+                try:
+                    child.close()
+                except Exception:
+                    pass
+                _INTERACTIVE_SESSIONS.pop(session["id"], None)
+                _stream_event("end", "timeout")
+                return {
+                    "stdout": session.get("full_output", ""),
+                    "stderr": f"Command timed out after {timeout_sec}s",
+                    "returncode": -1,
+                    "status": "error",
+                }
+            try:
+                index = child.expect([r"[\s\S]+", wexpect.EOF, wexpect.TIMEOUT], timeout=0.2)
+            except wexpect.EOF:
+                index = 1
+            except wexpect.TIMEOUT:
+                index = 2
+            except Exception as e:
+                try:
+                    child.close()
+                except Exception:
+                    pass
+                _INTERACTIVE_SESSIONS.pop(session["id"], None)
+                _stream_event("end", "error")
+                return {
+                    "stdout": session.get("full_output", ""),
+                    "stderr": f"Interactive command failed: {e}",
+                    "returncode": -1,
+                    "status": "error",
+                }
+
+            if index == 0:
+                if child.before:
+                    _session_append_output(session, child.before)
+                if child.after:
+                    _session_append_output(session, child.after)
+                continue
+
+            if index == 1:
+                if child.before:
+                    _session_append_output(session, child.before)
+                exit_code = child.exitstatus if child.exitstatus is not None else 0
+                return _finish_session(session, exit_code)
+
+            pending = session.get("pending_prompt")
+            if pending:
+                prompt_key, prompt_text = pending
+                response = _next_auto_response(session, prompt_key, prompt_text)
+                if response is not None:
+                    _send_input(session, response)
+                    continue
+                _stream_event("pause", prompt_text)
+                return {
+                    "stdout": session.get("full_output", ""),
+                    "stderr": "",
+                    "returncode": -1,
+                    "status": "need_input",
+                    "prompt": prompt_text,
+                    "sessionId": session["id"],
+                }
+
+            idle_for = time.monotonic() - session.get("last_output_time", time.monotonic())
+            post_send_idle = time.monotonic() - session.get("last_send_time", time.monotonic())
+            if session.get("saw_prompt") and idle_for >= _PROMPT_IDLE_TIMEOUT and post_send_idle >= _PROMPT_IDLE_TIMEOUT:
+                tail = ""
+                if session.get("scan_buffer"):
+                    tail = session["scan_buffer"].splitlines()[-1].strip()
+                prompt_text = ""
+                if tail and (":" in tail or tail.endswith("?") or tail.endswith(">")):
+                    prompt_text = tail
+                scan_buffer = session.get("scan_buffer", "")
+                last_prompt = None
+                for match in _PROMPT_TOKEN_RE.finditer(scan_buffer):
+                    raw_label = match.group("label").strip()
+                    label = _clean_prompt_label(raw_label, session.get("last_response"))
+                    if not _is_prompt_label(label):
+                        continue
+                    punct = match.group("punct")
+                    default = match.group("default") or ""
+                    prompt_text = f"{label}{punct} {default}".strip()
+                    last_prompt = (label, prompt_text)
+                if last_prompt:
+                    label, prompt_text = last_prompt
+                    prompt_key = _normalize_key(label)
+                else:
+                    if not prompt_text:
+                        prompt_text = session.get("last_prompt_text", "input:")
+                    label = re.split(r"[:?>]", prompt_text, 1)[0].strip()
+                    prompt_key = _normalize_key(label) if label else ""
+                _session_set_pending_prompt(session, prompt_key, prompt_text)
+                _stream_event("pause", prompt_text)
+                return {
+                    "stdout": session.get("full_output", ""),
+                    "stderr": "",
+                    "returncode": -1,
+                    "status": "need_input",
+                    "prompt": prompt_text,
+                    "sessionId": session["id"],
+                }
+
+            if hasattr(child, "isalive") and not child.isalive():
+                exit_code = child.exitstatus if child.exitstatus is not None else 0
+                return _finish_session(session, exit_code)
+
+    if session_id is not None:
+        session = _INTERACTIVE_SESSIONS.get(session_id)
+        if not session:
+            return {
+                "stdout": "",
+                "stderr": f"Interactive session {session_id} not found",
+                "returncode": -1,
+                "status": "error",
+            }
+        if wexpect is None:
+            return {
+                "stdout": "",
+                "stderr": "Interactive mode requires wexpect on Windows. Install with: pip install wexpect",
+                "returncode": -1,
+                "status": "error",
+            }
+        _stream_event("start", session.get("command", ""))
+        if interactive_responses is not None:
+            _apply_responses(session, interactive_responses)
+        if input_text is not None:
+            _send_input(session, input_text)
+        return _run_interactive(session, timeout)
+
+    if not command:
+        return {
+            "stdout": "",
+            "stderr": "Command required for execute_pwsh",
+            "returncode": -1,
+            "status": "error",
+        }
+
+    # Prefer interactive engine to detect prompts automatically (Windows + wexpect).
+    if wexpect is None:
+        if interactive_responses or input_text or session_id is not None:
+            return {
+                "stdout": "",
+                "stderr": "Interactive mode requires wexpect on Windows. Install with: pip install wexpect",
+                "returncode": -1,
+                "status": "error",
+            }
+        try:
+            shell_cmd = _build_shell_command(command, interactive=False)
             result = subprocess.run(
-                command,
+                shell_cmd,
                 shell=True,
                 capture_output=True,
                 text=True,
                 timeout=timeout,
-                cwd=os.getcwd()
+                cwd=os.getcwd(),
             )
             return {
-                'stdout': result.stdout,
-                'stderr': result.stderr,
-                'returncode': result.returncode
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+                "returncode": result.returncode,
+                "status": "completed",
             }
         except subprocess.TimeoutExpired as e:
             return {
-                'stdout': e.stdout or '',
-                'stderr': f'Command timed out after {timeout}s',
-                'returncode': -1
+                "stdout": e.stdout or "",
+                "stderr": f"Command timed out after {timeout}s",
+                "returncode": -1,
+                "status": "error",
             }
         except Exception as e:
             return {
-                'stdout': '',
-                'stderr': str(e),
-                'returncode': -1
+                "stdout": "",
+                "stderr": str(e),
+                "returncode": -1,
+                "status": "error",
             }
-    
-    # Interactive mode: use wexpect on Windows
+
+    session_id = _next_interactive_session_id()
+    shell_cmd = _build_shell_command(command, interactive=True)
     try:
-        import warnings
-        import time
-        warnings.filterwarnings(
-            "ignore",
-            message="pkg_resources is deprecated as an API.*",
-            category=UserWarning,
-        )
-        import wexpect
-        
-        print(f"\n[Interactive Mode] Starting: {command}")
-        
-        # Convert all responses to strings
-        responses = ["" if r is None else str(r) for r in interactive_responses]
-        print(f"[Interactive Mode] Will send {len(responses)} responses")
-        
-        # Spawn the command
-        child = wexpect.spawn(f'cmd.exe /c {command}', timeout=timeout, encoding='utf-8', codec_errors='ignore')
-        
-        output_lines = []
-        response_index = 0
-        last_output_time = time.time()
-        
-        while True:
-            try:
-                # Wait for output with a short timeout
-                index = child.expect([r'[\s\S]+', wexpect.EOF, wexpect.TIMEOUT], timeout=0.5)
-                
-                if index == 0:  # Got output
-                    if child.before:
-                        output_lines.append(child.before)
-                        print(child.before, end='', flush=True)
-                    if child.after:
-                        output_lines.append(child.after)
-                        print(child.after, end='', flush=True)
-                    last_output_time = time.time()
-                
-                elif index == 1:  # EOF - command finished
-                    if child.before:
-                        output_lines.append(child.before)
-                        print(child.before, end='', flush=True)
-                    break
-                
-                elif index == 2:  # Timeout - check if we should send a response
-                    # If we've been idle for a bit and have responses left, send one
-                    if response_index < len(responses):
-                        time_since_output = time.time() - last_output_time
-                        if time_since_output >= 0.3:  # 300ms idle = likely waiting for input
-                            response = responses[response_index]
-                            display = response if response else "<enter>"
-                            print(f"\n[Sending {response_index + 1}/{len(responses)}]: '{display}'", flush=True)
-                            child.sendline(response)
-                            response_index += 1
-                            last_output_time = time.time()
-                    elif time.time() - last_output_time > 2:
-                        # Been idle for 2+ seconds with no more responses - command might be done
-                        break
-                        
-            except wexpect.EOF:
-                break
-            except wexpect.TIMEOUT:
-                # Check if we should send a response
-                if response_index < len(responses):
-                    time_since_output = time.time() - last_output_time
-                    if time_since_output >= 0.3:
-                        response = responses[response_index]
-                        display = response if response else "<enter>"
-                        print(f"\n[Sending {response_index + 1}/{len(responses)}]: '{display}'", flush=True)
-                        child.sendline(response)
-                        response_index += 1
-                        last_output_time = time.time()
-                elif time.time() - last_output_time > 2:
-                    break
-        
-        # Get any remaining output
-        try:
-            remaining = child.read()
-            if remaining:
-                output_lines.append(remaining)
-                print(remaining, end='', flush=True)
-        except:
-            pass
-        
-        # Close and get exit code
-        try:
-            child.close()
-            exit_code = child.exitstatus if child.exitstatus is not None else 0
-        except:
-            exit_code = 0
-        
-        full_output = ''.join(output_lines)
-        
-        print(f"\n[Interactive Mode] Completed with exit code {exit_code}")
-        
-        return {
-            'stdout': full_output,
-            'stderr': '',
-            'returncode': exit_code
-        }
-        
-    except ImportError:
-        return {
-            'stdout': '',
-            'stderr': 'Interactive mode requires wexpect on Windows. Install with: pip install wexpect',
-            'returncode': -1
-        }
+        child = wexpect.spawn(shell_cmd, timeout=timeout, encoding="utf-8", codec_errors="ignore")
     except Exception as e:
-        import traceback
         return {
-            'stdout': '',
-            'stderr': f'Interactive command failed: {str(e)}\n{traceback.format_exc()}',
-            'returncode': -1
+            "stdout": "",
+            "stderr": f"Failed to start command: {e}",
+            "returncode": -1,
+            "status": "error",
         }
+
+    session = {
+        "id": session_id,
+        "command": command,
+        "child": child,
+        "output_lines": [],
+        "full_output": "",
+        "scan_buffer": "",
+        "scan_pos": 0,
+        "pending_prompt": None,
+        "pending_since": None,
+        "last_output_time": time.monotonic(),
+        "last_send_time": time.monotonic(),
+        "response_list": None,
+        "response_map": None,
+        "response_index": 0,
+        "last_prompt_key": "",
+        "last_prompt_text": "",
+        "saw_prompt": False,
+        "repeat_count": 0,
+        "last_response": None,
+    }
+    _INTERACTIVE_SESSIONS[session_id] = session
+    _stream_event("start", command)
+    if interactive_responses is not None:
+        _apply_responses(session, interactive_responses)
+        if isinstance(interactive_responses, dict):
+            _stream_event("info", f"RESPONSES: {len(interactive_responses)} (map)")
+        elif isinstance(interactive_responses, (list, tuple)):
+            _stream_event("info", f"RESPONSES: {len(interactive_responses)} (list)")
+    if input_text is not None:
+        _send_input(session, input_text)
+    return _run_interactive(session, timeout)
 
 
 # --- Background Process Management ---
