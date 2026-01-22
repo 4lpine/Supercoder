@@ -148,8 +148,6 @@ NATIVE_TOOLS = [
     {"type": "function", "function": {"name": "createPullRequest", "description": "Create a pull request using GitHub CLI", "parameters": {"type": "object", "properties": {"title": {"type": "string", "description": "PR title"}, "body": {"type": "string", "description": "PR description"}, "base": {"type": "string", "description": "Base branch (default: main)"}, "head": {"type": "string", "description": "Head branch (default: current)"}}, "required": ["title"]}}},
     {"type": "function", "function": {"name": "resolveMergeConflict", "description": "Attempt to resolve merge conflicts in a file", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "Path to file with conflicts"}, "strategy": {"type": "string", "enum": ["ours", "theirs", "both"], "description": "Resolution strategy"}}, "required": ["path"]}}},
     {"type": "function", "function": {"name": "loadContextGuide", "description": "Load specialized context guides for specific tasks. Use when you recognize a web app request or other specialized task. Available: 'web-apps' (for building Next.js + Supabase applications)", "parameters": {"type": "object", "properties": {"guideName": {"type": "string", "description": "Guide to load: 'web-apps' for web application development"}}, "required": ["guideName"]}}},
-    # Supabase Configuration (use executePwsh with psql for actual database operations)
-    {"type": "function", "function": {"name": "supabaseStatus", "description": "Check if Supabase is configured and get connection details including database URL. Use this to get credentials for psql commands.", "parameters": {"type": "object", "properties": {}}}},
     # Selenium Browser Automation Tools
     {"type": "function", "function": {"name": "seleniumStartBrowser", "description": "Start a browser session for automation. Returns session_id to use in other selenium commands.", "parameters": {"type": "object", "properties": {"browser": {"type": "string", "enum": ["chrome", "firefox", "edge"], "description": "Browser type (default: chrome)"}, "headless": {"type": "boolean", "description": "Run without GUI (default: false)"}}, "required": []}}},
     {"type": "function", "function": {"name": "seleniumCloseBrowser", "description": "Close a browser session", "parameters": {"type": "object", "properties": {"sessionId": {"type": "integer", "description": "Browser session ID"}}, "required": ["sessionId"]}}},
@@ -747,7 +745,6 @@ def execute_tool(tool_call: dict) -> str:
         analyze_stack_trace, rename_symbol, generate_commit_message, create_pull_request,
         resolve_merge_conflict, load_context_guide
     )
-    import supabase_tools
     import selenium_tools
     import vision_tools
 
@@ -945,9 +942,6 @@ def execute_tool(tool_call: dict) -> str:
             return json.dumps(resolve_merge_conflict(args["path"], args.get("strategy", "ours")))
         elif name == "loadContextGuide":
             return json.dumps(load_context_guide(args["guideName"]))
-        # Supabase - returns status with database connection string for psql
-        elif name == "supabaseStatus":
-            return json.dumps(supabase_tools.supabase_status())
         # Selenium Browser Automation Tools
         elif name == "seleniumStartBrowser":
             return json.dumps(selenium_tools.selenium_start_browser(

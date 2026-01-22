@@ -21,7 +21,6 @@
 - **Analyze UI screenshots** using vision models to detect visual bugs, accessibility issues, and layout problems
 - **Perform visual regression testing** by comparing screenshots before/after changes
 - **Debug visual bugs** by taking screenshots and analyzing them with AI vision models
-- **Work with Supabase databases** - Use supabaseStatus() to get credentials, then use psql via executePwsh for SQL operations
 
 **RESPONSE STYLE**
 
@@ -194,31 +193,6 @@ Please carefully check all code for syntax errors, ensuring proper brackets, sem
 - Proceed directly to testing after waiting
 - If service isn't ready, wait longer and retry
 
-**Supabase Database Operations:**
-- Configuration is stored after user runs `supabase config` command
-- Call `supabaseStatus()` to check if configured and get database connection details
-- **For SQL operations, use httpRequest with Supabase REST API (PostgREST):**
-  1. Get credentials from `supabaseStatus()` - you'll have url, service_role_key
-  2. Use httpRequest to interact with tables:
-     ```python
-     # Create/insert data (POST)
-     httpRequest(
-       "POST",
-       "https://PROJECT.supabase.co/rest/v1/TABLE_NAME",
-       headers={"apikey": "SERVICE_ROLE_KEY", "Authorization": "Bearer SERVICE_ROLE_KEY", "Content-Type": "application/json", "Prefer": "return=representation"},
-       body='{"column1": "value1", "column2": "value2"}'
-     )
-     
-     # Select data (GET)
-     httpRequest(
-       "GET", 
-       "https://PROJECT.supabase.co/rest/v1/TABLE_NAME?select=*",
-       headers={"apikey": "SERVICE_ROLE_KEY", "Authorization": "Bearer SERVICE_ROLE_KEY"}
-     )
-     ```
-  3. **Important:** Tables must exist first - if table doesn't exist, tell user to create it in Supabase dashboard SQL editor
-  4. Provide the exact SQL for creating the table: `CREATE TABLE table_name (id SERIAL PRIMARY KEY, ...);`
-  5. Give user the dashboard link: `https://PROJECT.supabase.co/project/_/sql/new`
 
 KEY Supercoder FEATURES
 
