@@ -149,6 +149,7 @@ NATIVE_TOOLS = [
     {"type": "function", "function": {"name": "resolveMergeConflict", "description": "Attempt to resolve merge conflicts in a file", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "Path to file with conflicts"}, "strategy": {"type": "string", "enum": ["ours", "theirs", "both"], "description": "Resolution strategy"}}, "required": ["path"]}}},
     {"type": "function", "function": {"name": "loadContextGuide", "description": "Load specialized context guides for specific tasks. Use when you recognize a web app request or other specialized task. Available: 'web-apps' (for building Next.js + Supabase applications)", "parameters": {"type": "object", "properties": {"guideName": {"type": "string", "description": "Guide to load: 'web-apps' for web application development"}}, "required": ["guideName"]}}},
     # Supabase Tools (using Python client)
+    {"type": "function", "function": {"name": "supabaseStatus", "description": "Check if Supabase is configured and get connection status. ALWAYS call this FIRST before other Supabase operations to check if already configured.", "parameters": {"type": "object", "properties": {}}}},
     {"type": "function", "function": {"name": "supabaseConfigure", "description": "Configure Supabase connection with URL and keys", "parameters": {"type": "object", "properties": {"url": {"type": "string", "description": "Supabase project URL (https://xxx.supabase.co)"}, "anonKey": {"type": "string", "description": "Anon/public key"}, "serviceRoleKey": {"type": "string", "description": "Service role key (optional, for admin operations)"}}, "required": ["url", "anonKey"]}}},
     {"type": "function", "function": {"name": "supabaseSelect", "description": "Select data from a table", "parameters": {"type": "object", "properties": {"table": {"type": "string", "description": "Table name"}, "columns": {"type": "string", "description": "Columns to select (default: *)"}, "filters": {"type": "object", "description": "Dict of column: value filters"}, "limit": {"type": "integer", "description": "Max rows to return"}, "orderBy": {"type": "string", "description": "Column to order by"}}, "required": ["table"]}}},
     {"type": "function", "function": {"name": "supabaseInsert", "description": "Insert data into a table", "parameters": {"type": "object", "properties": {"table": {"type": "string", "description": "Table name"}, "data": {"type": ["object", "array"], "description": "Single dict or list of dicts to insert"}}, "required": ["table", "data"]}}},
@@ -954,6 +955,8 @@ def execute_tool(tool_call: dict) -> str:
         elif name == "loadContextGuide":
             return json.dumps(load_context_guide(args["guideName"]))
         # Supabase tools
+        elif name == "supabaseStatus":
+            return json.dumps(supabase_tools.supabase_status())
         elif name == "supabaseConfigure":
             return json.dumps(supabase_tools.supabase_configure(args["url"], args["anonKey"], args.get("serviceRoleKey")))
         elif name == "supabaseSelect":

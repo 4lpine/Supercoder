@@ -324,6 +324,17 @@ def get_supabase() -> SupabaseConnection:
 
 # Tool functions for Supercoder
 
+def supabase_status() -> Dict[str, Any]:
+    """Check if Supabase is configured and get status"""
+    conn = get_supabase()
+    return {
+        "enabled": conn.enabled,
+        "configured": conn.enabled,
+        "url": conn.url if conn.enabled else None,
+        "using_service_role": bool(conn.service_role_key) if conn.enabled else False
+    }
+
+
 def supabase_configure(url: str, anon_key: str, service_role_key: str = None) -> Dict[str, Any]:
     """
     Configure Supabase connection
