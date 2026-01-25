@@ -33,6 +33,24 @@ except ImportError:
     PYGMENTS_AVAILABLE = False
 
 # ==============================================================================
+# Pre-compiled Regex Patterns (Performance Optimization)
+# ==============================================================================
+
+_ANSI_RE = re.compile(r'\x1b\[[0-9;]*m')
+_WHITESPACE_RE = re.compile(r'\s+')
+_CMD_SEP_RE = re.compile(r'\s*(?:&&|\|\|)\s*|\s&\s')
+_TASK_RE = re.compile(r'^(\s*[-*]?\s*\[([xX ])\]\s*)(.+)$', re.MULTILINE)
+_ANSI_TOKEN_RE = re.compile(r'(\x1b\[[0-9;]*m)')
+_CODE_BLOCK_RE = re.compile(r'```(\w+)?\n(.*?)```', re.DOTALL)
+
+# Markdown patterns
+_MD_BOLD_RE = re.compile(r'\*\*(.+?)\*\*')
+_MD_ITALIC1_RE = re.compile(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)')
+_MD_ITALIC2_RE = re.compile(r'_(.+?)_')
+_MD_CODE_RE = re.compile(r'`(.+?)`')
+_MD_NUMLIST_RE = re.compile(r'^(\s*)(\d+)\.\s')
+
+# ==============================================================================
 # Constants
 # ==============================================================================
 
@@ -64,7 +82,6 @@ def _detect_shell() -> Tuple[Optional[str], str]:
     return None, "cmd"
 
 _PS_EXE, _PS_LABEL = _detect_shell()
-_CMD_SEP_RE = re.compile(r'\s*(?:&&|\|\|)\s*|\s&\s')
 
 def _sanitize_cmd(cmd: str) -> str:
     return _CMD_SEP_RE.sub('; ', str(cmd).strip())
@@ -521,9 +538,6 @@ def state_blurb(state: State) -> str:
 # Output Compression
 # ==============================================================================
 
-_ANSI_RE = re.compile(r'\x1b\[[0-9;]*m')
-_WHITESPACE_RE = re.compile(r'\s+')
-
 def compress_console(text: str, max_len: int = 8000) -> str:
     if not text or len(text) <= max_len:
         return text
@@ -775,14 +789,14 @@ def _print_completion_box(summary: str, success: bool = True) -> None:
             return f"{C.BOLD}{C.BYELLOW}{line[4:]}{C.RST}"
         
         # Bold **text**
-        line = re.sub(r'\*\*(.+?)\*\*', rf'{C.BOLD}\1{C.RST}', line)
+        line = _MD_BOLD_RE.sub(rf'{C.BOLD}\1{C.RST}', line)
         
         # Italic *text* or _text_
-        line = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', rf'{C.DIM}\1{C.RST}', line)
-        line = re.sub(r'_(.+?)_', rf'{C.DIM}\1{C.RST}', line)
+        line = _MD_ITALIC1_RE.sub(rf'{C.DIM}\1{C.RST}', line)
+        line = _MD_ITALIC2_RE.sub(rf'{C.DIM}\1{C.RST}', line)
         
         # Inline code `code`
-        line = re.sub(r'`(.+?)`', rf'{C.BYELLOW}\1{C.RST}', line)
+        line = _MD_CODE_RE.sub(rf'{C.BYELLOW}\1{C.RST}', line)
         
         # Bullets and checkmarks
         if line.lstrip().startswith('- '):
@@ -799,7 +813,7 @@ def _print_completion_box(summary: str, success: bool = True) -> None:
             line = ' ' * indent + f'{C.RED}✗{C.RST} ' + line.lstrip()[2:]
         
         # Numbered lists
-        line = re.sub(r'^(\s*)(\d+)\.\s', rf'\1{C.BPURPLE}\2.{C.RST} ', line)
+        line = _MD_NUMLIST_RE.sub(rf'\1{C.BPURPLE}\2.{C.RST} ', line)
         
         return line
     
@@ -816,10 +830,10 @@ def _print_completion_box(summary: str, success: bool = True) -> None:
         current_visible = ""
         
         # Split into tokens (ANSI codes and regular text)
-        tokens = re.split(r'(\x1b\[[0-9;]*m)', text)
+        tokens = _ANSI_TOKEN_RE.split(text)
         
         for token in tokens:
-            if re.match(r'\x1b\[[0-9;]*m', token):
+            if _ANSI_TOKEN_RE.match(token):
                 # ANSI code - add without counting length
                 current_line += token
             else:
@@ -838,14 +852,13 @@ def _print_completion_box(summary: str, success: bool = True) -> None:
         return lines if lines else [""]
     
     # Parse markdown code blocks for syntax highlighting
-    code_block_pattern = re.compile(r'```(\w+)?\n(.*?)```', re.DOTALL)
     
     def process_text(text: str) -> list[str]:
         """Process text, applying syntax highlighting to code blocks and markdown to regular text."""
         result_lines = []
         last_end = 0
         
-        for match in code_block_pattern.finditer(text):
+        for match in _CODE_BLOCK_RE.finditer(text):
             # Add text before code block (with markdown rendering)
             before = text[last_end:match.start()]
             if before:
@@ -1067,8 +1080,6 @@ DEFAULT_EXECUTOR = load_prompt("Executor") or "You are a helpful coding assistan
 # ==============================================================================
 # Task Management
 # ==============================================================================
-
-_TASK_RE = re.compile(r'^(\s*[-*]?\s*\[([xX ])\]\s*)(.+)$', re.MULTILINE)
 
 def _parse_tasks() -> List[Tuple[int, bool, str]]:
     if not TASKS_FILE.exists():
