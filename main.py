@@ -466,9 +466,9 @@ class State:
     task: str = ""
     pinned: List[str] = field(default_factory=list)
     auto_mode: bool = True
-    auto_cap: int = 50
+    auto_cap: int = 10000
     auto_steps: int = 0
-    compact: bool = True
+    compact: bool = False
     verbose: bool = False
     verify_mode: str = "py_compile"
     verify_cmd: Optional[str] = None
@@ -703,36 +703,223 @@ def print_tool(name: str, args: Dict[str, Any], result: str, compact: bool = Tru
             if len(display.split('\n')) > 15:
                 print(f"    {C.GRAY}... ({len(display.split(chr(10))) - 15} more lines){C.RST}")
 
+import textwrap
+
+def repair_utf8_mojibake(s: str) -> str:
+    # Detect the typical pattern: 'â' + C1 control chars
+    if "â" in s and any(0x80 <= ord(ch) <= 0x9F for ch in s):
+        try:
+            return s.encode("latin1").decode("utf-8")
+        except UnicodeError:
+            pass
+    return s
+
+def _wrap_preserve_structure(text: str, width: int) -> list[str]:
+    """
+    Preserve:
+      - existing newlines
+      - indentation (leading spaces)
+      - multiple spaces inside lines
+      - tabs (expanded to spaces)
+    While still wrapping long lines to `width`.
+    """
+    out: list[str] = []
+    raw_lines = text.splitlines() or [""]
+
+    for raw in raw_lines:
+        raw = raw.expandtabs(4)  # keep tab structure predictable
+
+        # keep blank lines
+        if raw == "":
+            out.append("")
+            continue
+
+        indent_len = len(raw) - len(raw.lstrip(" "))
+        indent = raw[:indent_len]
+        body = raw[indent_len:]
+
+        wrapped = textwrap.wrap(
+            body,
+            width=max(1, width - indent_len),
+            replace_whitespace=False,  # DON'T collapse spaces
+            drop_whitespace=False,     # DON'T trim spaces
+            break_long_words=True,
+            break_on_hyphens=False,
+        ) or [""]
+
+        out.extend(indent + w for w in wrapped)
+
+    return out
+
+
 def _print_completion_box(summary: str, success: bool = True) -> None:
-    """Print a nice completion box with the summary."""
-    icon = "✓" if success else "✗"
+    import sys
+    import re
+    sys.stdout.reconfigure(encoding="utf-8")
+    """Print a nice completion box with the summary (with markdown rendering and syntax highlighting)."""
+    icon = "✓" if success else "x"
     color = C.GREEN if success else C.RED
     border_color = C.BPURPLE
+
+    total_width = 70          # number of ─ across
+    content_width = total_width - 2  # inside box (excluding the two borders)
+
+    def render_markdown_line(line: str) -> str:
+        """Render markdown formatting in a line."""
+        # Headers
+        if line.startswith('# '):
+            return f"{C.BOLD}{C.BRED}{line[2:]}{C.RST}"
+        elif line.startswith('## '):
+            return f"{C.BOLD}{C.BPURPLE}{line[3:]}{C.RST}"
+        elif line.startswith('### '):
+            return f"{C.BOLD}{C.BYELLOW}{line[4:]}{C.RST}"
+        
+        # Bold **text**
+        line = re.sub(r'\*\*(.+?)\*\*', rf'{C.BOLD}\1{C.RST}', line)
+        
+        # Italic *text* or _text_
+        line = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', rf'{C.DIM}\1{C.RST}', line)
+        line = re.sub(r'_(.+?)_', rf'{C.DIM}\1{C.RST}', line)
+        
+        # Inline code `code`
+        line = re.sub(r'`(.+?)`', rf'{C.BYELLOW}\1{C.RST}', line)
+        
+        # Bullets and checkmarks
+        if line.lstrip().startswith('- '):
+            indent = len(line) - len(line.lstrip())
+            line = ' ' * indent + f'{C.BPURPLE}•{C.RST} ' + line.lstrip()[2:]
+        elif line.lstrip().startswith('* '):
+            indent = len(line) - len(line.lstrip())
+            line = ' ' * indent + f'{C.BPURPLE}•{C.RST} ' + line.lstrip()[2:]
+        elif line.lstrip().startswith('✓ '):
+            indent = len(line) - len(line.lstrip())
+            line = ' ' * indent + f'{C.GREEN}✓{C.RST} ' + line.lstrip()[2:]
+        elif line.lstrip().startswith('✗ '):
+            indent = len(line) - len(line.lstrip())
+            line = ' ' * indent + f'{C.RED}✗{C.RST} ' + line.lstrip()[2:]
+        
+        # Numbered lists
+        line = re.sub(r'^(\s*)(\d+)\.\s', rf'\1{C.BPURPLE}\2.{C.RST} ', line)
+        
+        return line
     
-    # Word wrap the summary to fit in the box
-    max_width = 66
-    words = summary.split()
-    lines = []
-    current_line = ""
-    for word in words:
-        if len(current_line) + len(word) + 1 <= max_width:
-            current_line = f"{current_line} {word}".strip()
-        else:
-            if current_line:
-                lines.append(current_line)
-            current_line = word
-    if current_line:
-        lines.append(current_line)
+    def wrap_with_ansi(text: str, width: int) -> list[str]:
+        """Wrap text while preserving ANSI codes."""
+        # Calculate visible length (without ANSI codes)
+        visible = _ANSI_RE.sub('', text)
+        if len(visible) <= width:
+            return [text]
+        
+        # Need to wrap - do it on visible text then map back to original
+        lines = []
+        current_line = ""
+        current_visible = ""
+        
+        # Split into tokens (ANSI codes and regular text)
+        tokens = re.split(r'(\x1b\[[0-9;]*m)', text)
+        
+        for token in tokens:
+            if re.match(r'\x1b\[[0-9;]*m', token):
+                # ANSI code - add without counting length
+                current_line += token
+            else:
+                # Regular text - need to check length
+                for char in token:
+                    if len(current_visible) >= width:
+                        lines.append(current_line)
+                        current_line = ""
+                        current_visible = ""
+                    current_line += char
+                    current_visible += char
+        
+        if current_line:
+            lines.append(current_line)
+        
+        return lines if lines else [""]
     
+    # Parse markdown code blocks for syntax highlighting
+    code_block_pattern = re.compile(r'```(\w+)?\n(.*?)```', re.DOTALL)
+    
+    def process_text(text: str) -> list[str]:
+        """Process text, applying syntax highlighting to code blocks and markdown to regular text."""
+        result_lines = []
+        last_end = 0
+        
+        for match in code_block_pattern.finditer(text):
+            # Add text before code block (with markdown rendering)
+            before = text[last_end:match.start()]
+            if before:
+                for line in before.split('\n'):
+                    rendered = render_markdown_line(line)
+                    # Wrap if needed
+                    wrapped = wrap_with_ansi(rendered, content_width)
+                    result_lines.extend(wrapped)
+            
+            # Process code block
+            lang = match.group(1) or ""
+            code = match.group(2).rstrip('\n')
+            
+            # Add code block header
+            result_lines.append(f"{C.GRAY}┌─ {lang or 'code'} ─{C.RST}")
+            
+            # Apply syntax highlighting if available
+            if PYGMENTS_AVAILABLE and code.strip():
+                try:
+                    highlighted = _syntax_highlight(code, f"file.{lang}" if lang else "")
+                    highlighted = highlighted.rstrip()
+                    for code_line in highlighted.split('\n'):
+                        result_lines.append(f"{C.GRAY}│{C.RST} {code_line}")
+                except:
+                    for code_line in code.split('\n'):
+                        result_lines.append(f"{C.GRAY}│{C.RST} {C.BYELLOW}{code_line}{C.RST}")
+            else:
+                for code_line in code.split('\n'):
+                    result_lines.append(f"{C.GRAY}│{C.RST} {C.BYELLOW}{code_line}{C.RST}")
+            
+            result_lines.append(f"{C.GRAY}└{'─' * 10}{C.RST}")
+            
+            last_end = match.end()
+        
+        # Add remaining text after last code block (with markdown rendering)
+        if last_end < len(text):
+            remaining = text[last_end:]
+            if remaining:
+                for line in remaining.split('\n'):
+                    rendered = render_markdown_line(line)
+                    wrapped = wrap_with_ansi(rendered, content_width)
+                    result_lines.extend(wrapped)
+        
+        # If no code blocks, just render markdown
+        if not result_lines:
+            for line in text.split('\n'):
+                rendered = render_markdown_line(line)
+                wrapped = wrap_with_ansi(rendered, content_width)
+                result_lines.extend(wrapped)
+        
+        return result_lines
+
+    lines = process_text(repair_utf8_mojibake(summary))
+
+    title = f"{icon} COMPLETE"
+    title_pad = max(0, content_width - len(title))
+
     print()
-    print(f"  {border_color}╭{'─' * 70}╮{C.RST}")
-    print(f"  {border_color}│{C.RST}  {color}{icon} COMPLETE{C.RST}{' ' * 57}{border_color}│{C.RST}")
-    print(f"  {border_color}├{'─' * 70}┤{C.RST}")
+    print(f"  {border_color}╭{'─' * total_width}╮{C.RST}")
+    print(f"  {border_color}│{C.RST}  {color}{title}{C.RST}{' ' * title_pad}{border_color}│{C.RST}")
+    print(f"  {border_color}├{'─' * total_width}┤{C.RST}")
+
     for line in lines:
-        padding = 68 - len(line)
+        # Strip ANSI codes for length calculation
+        visible_len = len(_ANSI_RE.sub('', line))
+        padding = max(0, content_width - visible_len)
         print(f"  {border_color}│{C.RST}  {line}{' ' * padding}{border_color}│{C.RST}")
-    print(f"  {border_color}╰{'─' * 70}╯{C.RST}")
+
+    print(f"  {border_color}╰{'─' * total_width}╯{C.RST}")
     print()
+
+
+
+
 
 def build_continue_prompt(state: State, last_tools: List[str], had_content: bool) -> str:
     """Build a context-rich continue prompt based on what just happened."""
@@ -1188,9 +1375,11 @@ def cmd_vision(state: State, agent: Agent, args: str) -> None:
         status("  vision api         - Use OpenRouter API", "info")
         status("  vision status      - Show current configuration", "info")
 
-    status("After configuration, the agent can use Supabase tools:", "info")
-    status("  - supabaseSelect, supabaseInsert, supabaseUpdate, supabaseDelete", "info")
-    status("  - supabaseExecuteSql, supabaseListTables, supabaseGetSchema", "info")
+    status("After configuration, use Supabase CLI commands:", "info")
+    status("  - supabase link --project-ref <ref>  (link to remote project)", "info")
+    status("  - supabase db push                   (apply migrations)", "info")
+    status("  - supabase db pull                   (pull remote schema)", "info")
+    status("  - supabase status                    (check connection)", "info")
 
 
 @cmd("index", "Rebuild retrieval index")

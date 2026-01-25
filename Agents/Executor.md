@@ -303,38 +303,119 @@ Vision Analysis (use for UI debugging, accessibility checks, visual regression t
 - `visionSetMode(mode, modelSize?)` - Set vision mode: "api" (OpenRouter) or "local" (2b/4b/8b/32b)
 - `visionGetStatus()` - Get current vision configuration and model status
 
-Supabase Database (user must configure first with `supabase config` command):
-- `supabaseConfigure(url, anonKey, serviceRoleKey?)` - Configure connection (usually done via command, not tool)
-- `supabaseSelect(table, columns?, filters?, limit?, orderBy?)` - Query data from table
-- `supabaseInsert(table, data)` - Insert single row or multiple rows (data can be dict or list of dicts)
-- `supabaseUpdate(table, data, filters)` - Update rows matching filters
-- `supabaseDelete(table, filters)` - Delete rows matching filters
-- `supabaseExecuteSql(query)` - Execute raw SQL (requires RPC function setup)
-- `supabaseListTables()` - List all tables in public schema
-- `supabaseGetSchema(table)` - Get column information for a table
-- `supabaseDisable()` - Disable Supabase connection
+**SUPABASE CLI USAGE**
+
+For Supabase projects, use the Supabase CLI via `executePwsh` commands:
+
+**Common Supabase CLI Commands:**
+
+1. **Link project to remote:**
+   ```python
+   result = executePwsh("cd project-dir; supabase link --project-ref YOUR_PROJECT_REF")
+   # If it prompts for confirmation, handle it:
+   if result["status"] == "need_input":
+       executePwsh(sessionId=result["sessionId"], input="")  # Press Enter
+   ```
+
+2. **Check project status:**
+   ```python
+   executePwsh("cd project-dir; supabase status")
+   ```
+
+3. **Push migrations to remote database:**
+   ```python
+   result = executePwsh("cd project-dir; supabase db push")
+   # Handle confirmation prompt
+   if result["status"] == "need_input":
+       executePwsh(sessionId=result["sessionId"], input="Y")
+   ```
+
+4. **Pull remote schema to local:**
+   ```python
+   executePwsh("cd project-dir; supabase db pull")
+   ```
+
+5. **Create new migration:**
+   ```python
+   executePwsh("cd project-dir; supabase migration new migration_name")
+   ```
+
+6. **Generate TypeScript types:**
+   ```python
+   executePwsh("cd project-dir; supabase gen types typescript --local > lib/database.types.ts")
+   ```
+
+7. **Reset local database:**
+   ```python
+   executePwsh("cd project-dir; supabase db reset")
+   ```
 
 **IMPORTANT: Supabase Setup**
-Before using Supabase tools, the user must run `supabase config` command to set up credentials:
-1. User runs: `supabase config`
-2. Enters Project URL (https://xxx.supabase.co)
-3. Enters Anon/Public Key
-4. Optionally enters Service Role Key (for admin operations)
+Before using Supabase CLI, ensure:
+1. User has Supabase CLI installed (`supabase --version`)
+2. User has their project credentials (URL, anon key, service role key)
+3. Project is linked to remote (`supabase link --project-ref <ref>`)
 
-After configuration, you can use all Supabase tools. Example workflow:
+**Example Workflow:**
+```python
+# 1. Check if linked
+result = executePwsh("cd chat-app; supabase status")
+
+# 2. If not linked, link it
+result = executePwsh("cd chat-app; supabase link --project-ref iejbuctvanhklevusxio")
+if result["status"] == "need_input":
+    executePwsh(sessionId=result["sessionId"], input="")
+
+# 3. Push migrations
+result = executePwsh("cd chat-app; supabase db push")
+if result["status"] == "need_input":
+    # Prompt will be something like "Do you want to push these migrations?"
+    executePwsh(sessionId=result["sessionId"], input="Y")
+
+# 4. Generate types
+executePwsh("cd chat-app; supabase gen types typescript --local > lib/database.types.ts")
 ```
-# Query users table
-supabaseSelect("users", columns="id,email,created_at", limit=10)
 
-# Insert new user
-supabaseInsert("users", {"email": "test@example.com", "name": "Test User"})
+**Handling Interactive Prompts:**
 
-# Update user
-supabaseUpdate("users", {"name": "Updated Name"}, {"email": "test@example.com"})
+**Recommended: Session-based approach (most reliable)**
+When a command needs input, `executePwsh` returns:
+- `status: "need_input"`
+- `sessionId: <number>` - use this to continue the session
+- `prompt: <string>` - the prompt text asking for input
+- `stdout: <string>` - all output so far
 
-# Delete user
-supabaseDelete("users", {"email": "test@example.com"})
+To respond, call `executePwsh` again with:
+```python
+executePwsh(sessionId=<sessionId>, input="your response")
 ```
+
+Common responses:
+- `"Y"` or `"yes"` - confirm
+- `"N"` or `"no"` - decline
+- `""` - press Enter (accept default)
+- Any text - type that text
+
+**Alternative: Pre-provide responses (optional)**
+You can optionally provide `interactiveResponses` to auto-answer prompts:
+```python
+# Using a dict (matches prompt text)
+executePwsh(
+    "cd chat-app; supabase db push",
+    interactiveResponses={
+        "do you want to push": "Y",  # Matches prompt containing this text
+        "*": ""  # Fallback for unmatched prompts
+    }
+)
+
+# Using a list (answers in order)
+executePwsh(
+    "npm init",
+    interactiveResponses=["my-app", "1.0.0", "", "yes"]
+)
+```
+
+Note: If a prompt doesn't match any provided response, it will still return `need_input` for you to handle manually.
 
 Web & Network:
 - `webSearch(query, site?, maxResults?)` - Search the web for programming help
@@ -350,93 +431,7 @@ User Interaction:
 - `interactWithUser(message, interactionType)` - Communicate with user (complete/question/error)
 - `finish(summary, status?)` - Signal task completion with summary
 
-**SUPABASE CLI TOOLS**
 
-You have direct access to Supabase CLI via these tools (preferred over raw executePwsh):
-
-- `supabaseStatus(projectPath?)` - Check if project is linked and get status
-- `supabaseProjectsList()` - List all available Supabase projects with their refs
-- `supabaseLink(projectRef, projectPath?)` - Link project to Supabase (non-interactive!)
-- `supabaseUnlink(projectPath?)` - Unlink project from Supabase
-- `supabaseDbPush(projectPath?, projectRef?)` - Push local migrations to remote database
-- `supabaseDbPull(projectPath?, projectRef?)` - Pull remote schema to local migrations
-- `supabaseGenTypes(projectPath?, projectRef?, lang?)` - Generate types (typescript/go/swift/kotlin)
-- `supabaseMigrationNew(name, projectPath?)` - Create a new migration file
-
-**WORKFLOW:**
-
-1. **Check link status:**
-   ```
-   supabaseStatus(projectPath="chat-app")
-   ```
-
-2. **If not linked, link it:**
-   ```
-   # First get available projects
-   supabaseProjectsList()
-   
-   # Then link using project ref
-   supabaseLink(projectRef="khmnxujtyvgrvgbxfemr", projectPath="chat-app")
-   ```
-
-3. **Push migrations:**
-   ```
-   supabaseDbPush(projectPath="chat-app")
-   ```
-
-4. **Generate types:**
-   ```
-   supabaseGenTypes(projectPath="chat-app", lang="typescript")
-   ```
-
-**IMPORTANT:** Use these tools instead of raw `executePwsh` commands - they handle the CLI properly and avoid interactive prompts!
-
-**SUPABASE MANAGEMENT API TOOLS**
-
-For direct SQL execution and schema management without migrations, use the Management API tools:
-
-- `supabaseMgmtConfigure(accessToken, projectRef)` - Configure with Personal Access Token
-- `supabaseMgmtExecuteSql(query)` - Execute raw SQL query
-- `supabaseMgmtCreateTable(table, columns, primaryKey?)` - Create table with columns
-- `supabaseMgmtListTables()` - List all tables in public schema
-- `supabaseMgmtGetSchema(table)` - Get table schema information
-- `supabaseMgmtDropTable(table)` - Drop a table
-- `supabaseMgmtDisable()` - Disable Management API
-
-**SETUP:**
-
-1. **Get Personal Access Token:**
-   - User must visit https://supabase.com/dashboard/account/tokens
-   - Create a new token with appropriate permissions
-   - Token is different from the anon key!
-
-2. **Configure:**
-   ```
-   supabaseMgmtConfigure(
-       accessToken="sbp_xxx...",
-       projectRef="khmnxujtyvgrvgbxfemr"
-   )
-   ```
-
-3. **Execute SQL:**
-   ```
-   supabaseMgmtExecuteSql(query="SELECT * FROM users LIMIT 10")
-   ```
-
-4. **Create table:**
-   ```
-   supabaseMgmtCreateTable(
-       table="products",
-       columns={"name": "TEXT", "price": "DECIMAL", "stock": "INTEGER"}
-   )
-   ```
-
-**WHEN TO USE EACH:**
-
-- **CLI Tools** (supabaseDbPush, etc.): For migration-based development, type generation, project setup
-- **Management API** (supabaseMgmtExecuteSql, etc.): For direct SQL execution, quick schema changes, data queries
-
-Both can be used together - CLI for migrations, Management API for ad-hoc queries.
 
 **GOAL**
 

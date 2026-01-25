@@ -557,34 +557,81 @@ export async function GET() {
 
 ## Supabase Integration in Supercoder
 
-**Before building, configure Supabase:**
+**Before building, ensure Supabase CLI is set up:**
 ```bash
-> supabase config
-# Enter Project URL, Anon Key, Service Role Key
+# Check if Supabase CLI is installed
+supabase --version
+
+# Link your project to Supabase
+cd your-project
+supabase link --project-ref YOUR_PROJECT_REF
+
+# Push migrations to remote database
+supabase db push
+
+# Generate TypeScript types
+supabase gen types typescript --local > lib/database.types.ts
 ```
 
-**Use Supabase tools to manage database:**
-```typescript
-// List tables
-supabaseListTables()
+**Use Supabase CLI commands via executePwsh:**
+```python
+# Check project status
+executePwsh("cd chat-app; supabase status")
 
-// Get schema
-supabaseGetSchema("users")
+# Link project (if it prompts, handle with session_id + input)
+result = executePwsh("cd chat-app; supabase link --project-ref YOUR_REF")
+if result["status"] == "need_input":
+    # Handle the prompt
+    executePwsh(sessionId=result["sessionId"], input="Y")
+
+# Push migrations (handle prompts manually)
+result = executePwsh("cd chat-app; supabase db push")
+if result["status"] == "need_input":
+    executePwsh(sessionId=result["sessionId"], input="Y")
+
+# Pull remote schema
+executePwsh("cd chat-app; supabase db pull")
+
+# Generate types
+executePwsh("cd chat-app; supabase gen types typescript --local > lib/database.types.ts")
+
+# Create new migration
+executePwsh("cd chat-app; supabase migration new add_users_table")
+```
+
+**For direct database queries, use the Supabase JavaScript client in your app:**
+```typescript
+// In your Next.js app code (not agent tools)
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
 // Query data
-supabaseSelect("users", columns="id,email,name", limit=10)
+const { data, error } = await supabase
+  .from('users')
+  .select('id,email,name')
+  .limit(10)
 
-// Insert test data
-supabaseInsert("users", {
-  email: "test@example.com",
-  name: "Test User"
+// Insert data
+await supabase.from('users').insert({
+  email: 'test@example.com',
+  name: 'Test User'
 })
 
 // Update data
-supabaseUpdate("users", { name: "Updated Name" }, { email: "test@example.com" })
+await supabase
+  .from('users')
+  .update({ name: 'Updated Name' })
+  .eq('email', 'test@example.com')
 
 // Delete data
-supabaseDelete("users", { email: "test@example.com" })
+await supabase
+  .from('users')
+  .delete()
+  .eq('email', 'test@example.com')
 ```
 
 ## Best Practices

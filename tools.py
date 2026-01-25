@@ -107,7 +107,7 @@ def _stream_event(event: str, text: Any = None) -> None:
 _INTERACTIVE_SESSIONS: Dict[int, Dict[str, Any]] = {}
 _INTERACTIVE_SESSION_COUNTER = 0
 _PROMPT_TOKEN_RE = re.compile(
-    r'(?<!")(?P<label>[A-Za-z][^:\r\n]{0,60})(?P<punct>[:?>])\s*(?P<default>\([^\r\n]*?\))?'
+    r'(?<!["(])(?P<label>[A-Za-z][^:\r\n]{0,60})(?P<punct>[:?>])\s*(?P<default>\([^\r\n]*?\))?'
 )
 _CMD_SEP_RE = re.compile(r'\s*(?:&&|\|\|)\s*|\s&\s')
 _PROMPT_IDLE_TIMEOUT = 1.0
@@ -153,6 +153,8 @@ def _is_prompt_label(label: str) -> bool:
     if len(trimmed) < 2 or len(trimmed) > 40:
         return False
     lower = trimmed.lower()
+    if re.match(r"^test\s*\d+$", lower) or lower.startswith("test "):
+        return False
     if lower.startswith(("about to write to", "press ^c", "see `", "use `")):
         return False
     if "\\" in trimmed or "/" in trimmed:
@@ -164,10 +166,12 @@ def _clean_prompt_label(label: str, last_response: Optional[str]) -> str:
     if last_response:
         if last_response in cleaned:
             cleaned = cleaned.split(last_response)[-1].strip()
+    if "(" in cleaned:
+        cleaned = cleaned.split("(", 1)[0].strip()
     if "  " in cleaned:
         cleaned = re.split(r"\s{2,}", cleaned)[-1].strip()
     if cleaned and len(cleaned) > 40:
-        cleaned = cleaned.split()[-1]
+        cleaned = cleaned[:40].strip()
     return cleaned
 
 def _lookup_response(response_map: Optional[Dict[str, str]], prompt_key: str, prompt_line: str) -> Tuple[Optional[str], str]:
@@ -204,6 +208,7 @@ def _session_set_pending_prompt(session: Dict[str, Any], prompt_key: str, prompt
     session["last_prompt_key"] = prompt_key
     session["last_prompt_text"] = prompt_text
     session["saw_prompt"] = True
+    session["awaiting_prompt"] = False
 
 def _session_append_output(session: Dict[str, Any], text: Any) -> None:
     if not text:
@@ -211,6 +216,7 @@ def _session_append_output(session: Dict[str, Any], text: Any) -> None:
     if not isinstance(text, str):
         text = str(text)
     session["output_lines"].append(text)
+    session["output_count"] = session.get("output_count", 0) + 1
     session["full_output"] += text
     _stream_event("output", text)
     session["scan_buffer"] += text
@@ -220,14 +226,18 @@ def _session_append_output(session: Dict[str, Any], text: Any) -> None:
 def _session_scan_prompts(session: Dict[str, Any]) -> None:
     scan_buffer = session["scan_buffer"]
     scan_pos = session["scan_pos"]
+    send_scan_pos = session.get("send_scan_pos", 0)
     if len(scan_buffer) > 8000:
         excess = len(scan_buffer) - 8000
         scan_buffer = scan_buffer[excess:]
         scan_pos = max(0, scan_pos - excess)
+        send_scan_pos = max(0, send_scan_pos - excess)
     scan_start = max(0, scan_pos - 200)
     last_prompt = None
     for match in _PROMPT_TOKEN_RE.finditer(scan_buffer, scan_start):
         if match.end() <= scan_pos:
+            continue
+        if session.get("awaiting_prompt") and match.end() <= send_scan_pos:
             continue
         raw_label = match.group("label").strip()
         label = _clean_prompt_label(raw_label, session.get("last_response"))
@@ -242,6 +252,7 @@ def _session_scan_prompts(session: Dict[str, Any]) -> None:
         _session_set_pending_prompt(session, last_prompt[0], last_prompt[1])
     session["scan_buffer"] = scan_buffer
     session["scan_pos"] = len(scan_buffer)
+    session["send_scan_pos"] = send_scan_pos
 
 # --- Shell Execution ---
 def execute_pwsh(
@@ -310,6 +321,9 @@ def execute_pwsh(
         session["last_send_time"] = now
         session["last_output_time"] = now
         session["last_response"] = text
+        session["awaiting_prompt"] = True
+        session["send_output_count"] = session.get("output_count", 0)
+        session["send_scan_pos"] = len(session.get("scan_buffer", ""))
         session["pending_prompt"] = None
         session["pending_since"] = None
 
@@ -415,6 +429,12 @@ def execute_pwsh(
             idle_for = time.monotonic() - session.get("last_output_time", time.monotonic())
             post_send_idle = time.monotonic() - session.get("last_send_time", time.monotonic())
             if session.get("saw_prompt") and idle_for >= _PROMPT_IDLE_TIMEOUT and post_send_idle >= _PROMPT_IDLE_TIMEOUT:
+                output_count = session.get("output_count", 0)
+                send_output_count = session.get("send_output_count", 0)
+                awaiting_prompt = session.get("awaiting_prompt", False)
+                if awaiting_prompt and output_count <= send_output_count:
+                    continue
+                send_scan_pos = session.get("send_scan_pos", 0)
                 tail = ""
                 if session.get("scan_buffer"):
                     tail = session["scan_buffer"].splitlines()[-1].strip()
@@ -424,6 +444,8 @@ def execute_pwsh(
                 scan_buffer = session.get("scan_buffer", "")
                 last_prompt = None
                 for match in _PROMPT_TOKEN_RE.finditer(scan_buffer):
+                    if awaiting_prompt and match.end() <= send_scan_pos:
+                        continue
                     raw_label = match.group("label").strip()
                     label = _clean_prompt_label(raw_label, session.get("last_response"))
                     if not _is_prompt_label(label):
@@ -437,6 +459,8 @@ def execute_pwsh(
                     prompt_key = _normalize_key(label)
                 else:
                     if not prompt_text:
+                        if awaiting_prompt:
+                            continue
                         prompt_text = session.get("last_prompt_text", "input:")
                     label = re.split(r"[:?>]", prompt_text, 1)[0].strip()
                     prompt_key = _normalize_key(label) if label else ""
@@ -556,6 +580,10 @@ def execute_pwsh(
         "last_prompt_key": "",
         "last_prompt_text": "",
         "saw_prompt": False,
+        "awaiting_prompt": False,
+        "output_count": 0,
+        "send_output_count": 0,
+        "send_scan_pos": 0,
         "repeat_count": 0,
         "last_response": None,
     }
