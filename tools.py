@@ -2268,6 +2268,7 @@ def load_context_guide(guide_name: str) -> Dict[str, Any]:
     
     Available guides:
     - "web-apps": Complete guide for building web applications with Next.js + Supabase
+    - "supabase-cli-guide": Comprehensive Supabase CLI usage guide
     
     Returns:
         Guide content and metadata
@@ -2280,7 +2281,7 @@ def load_context_guide(guide_name: str) -> Dict[str, Any]:
         if not guide_path.exists():
             return {
                 "error": f"Guide '{guide_name}' not found",
-                "available_guides": ["web-apps"]
+                "available_guides": ["web-apps", "supabase-cli-guide"]
             }
         
         content = guide_path.read_text(encoding='utf-8')

@@ -1,0 +1,29 @@
+# SuperCoder Requirements
+# Install with: pip install -r requirements.txt
+
+# Core dependencies
+requests>=2.31.0
+colorama>=0.4.6
+
+# Interactive command support (Windows)
+wexpect>=4.0.0
+
+# Selenium Browser Automation
+selenium>=4.16.0
+webdriver-manager>=4.0.1
+
+# Supabase integration
+supabase>=2.0.0
+
+# Image processing
+Pillow>=10.1.0
+
+# Vision Model Dependencies (Optional - for local Qwen3-VL models)
+# Uncomment if you want to use local vision models:
+# torch>=2.0.0
+# transformers>=4.37.0
+# qwen-vl-utils>=0.0.2
+# accelerate>=0.25.0
+
+# Note: For GPU support with local vision models, install CUDA-enabled PyTorch:
+# pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
