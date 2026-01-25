@@ -1075,7 +1075,7 @@ def load_prompt(name: str) -> str:
         return path.read_text(encoding='utf-8')
     return ""
 
-DEFAULT_EXECUTOR = load_prompt("Executor") or "You are a helpful coding assistant."
+DEFAULT_EXECUTOR = load_prompt("Executor-optimized") or load_prompt("Executor") or "You are a helpful coding assistant."
 
 # ==============================================================================
 # Task Management
