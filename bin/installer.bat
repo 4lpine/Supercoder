@@ -115,8 +115,8 @@ set "LAUNCHER=%BIN_DIR%\supercoder.cmd"
 :: Create launcher batch file
 (
 echo @echo off
-echo cd /d "%%~dp0.."
-echo python supercoder.py %%*
+echo python -u "%%~dp0..\supercoder.py" %%*
+echo exit /b %%ERRORLEVEL%%
 ) > "%LAUNCHER%"
 
 echo         Created %LAUNCHER%
