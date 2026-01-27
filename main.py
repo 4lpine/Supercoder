@@ -1843,7 +1843,7 @@ def main():
             pass
     agent = Agent(
         initial_prompt=DEFAULT_EXECUTOR,
-        model="qwen/qwen3-coder:free",
+        model="mistralai/devstral-2512:free",
         streaming=True
     )
     state = State()
