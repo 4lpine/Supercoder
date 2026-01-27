@@ -449,8 +449,8 @@ Project-specific files are stored in `.supercoder/`:
                             │
                             ▼
                   ┌──────────────────┐
-                  │   OpenRouter API  │
-                  │   350+ AI Models  │
+                  │  OpenRouter API  │
+                  │  350+ AI Models  │
                   └──────────────────┘
 ```
 
