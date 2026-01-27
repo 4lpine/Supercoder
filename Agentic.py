@@ -270,7 +270,7 @@ class FileIndexer:
 
 
 class Agent:
-    def __init__(self, initial_prompt: str, model: str = "qwen/qwen3-coder:free", streaming: bool = False, embedding_model: str = None):
+    def __init__(self, initial_prompt: str, model: str = "mistralai/devstral-2512:free", streaming: bool = False, embedding_model: str = None):
         self.model = model
         self.streaming = streaming
         self.messages = []
