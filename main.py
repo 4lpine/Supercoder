@@ -19,6 +19,19 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Set
 
+# Set UTF-8 encoding for all I/O streams (must be done early)
+if sys.platform == 'win32':
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+        sys.stdin.reconfigure(encoding='utf-8')
+    except AttributeError:
+        # Python < 3.7
+        import codecs
+        sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
+        sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')
+        sys.stdin = codecs.getreader('utf-8')(sys.stdin.buffer, 'strict')
+
 import tools
 from Agentic import Agent, execute_tool, MODEL_LIMITS, TokenManager
 
@@ -767,10 +780,9 @@ def _wrap_preserve_structure(text: str, width: int) -> list[str]:
 
 
 def _print_completion_box(summary: str, success: bool = True) -> None:
+    """Print a nice completion box with the summary (with markdown rendering and syntax highlighting)."""
     import sys
     import re
-    sys.stdout.reconfigure(encoding="utf-8")
-    """Print a nice completion box with the summary (with markdown rendering and syntax highlighting)."""
     icon = "✓" if success else "x"
     color = C.GREEN if success else C.RED
     border_color = C.BPURPLE

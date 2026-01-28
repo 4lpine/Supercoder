@@ -597,7 +597,7 @@ class Agent:
                 
                 resp = requests.post(
                     "https://openrouter.ai/api/v1/chat/completions",
-                    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json; charset=utf-8"},
                     json={
                         "model": self.model,
                         "messages": self.messages,
@@ -608,6 +608,7 @@ class Agent:
                     },
                     timeout=timeout, stream=streaming
                 )
+                resp.encoding = 'utf-8'  # Explicitly set response encoding
                 resp.raise_for_status()
                 
                 if streaming:
