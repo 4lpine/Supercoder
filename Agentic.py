@@ -91,6 +91,23 @@ class TokenCounter:
         return total + 3
 
 
+# --- Encoding Fix Helper ---
+def _fix_encoding_in_dict(obj):
+    """Recursively fix double-encoded UTF-8 in dictionary/list structures."""
+    if isinstance(obj, dict):
+        return {k: _fix_encoding_in_dict(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_fix_encoding_in_dict(item) for item in obj]
+    elif isinstance(obj, str):
+        try:
+            # Check for telltale signs of double-encoding
+            if 'Ã' in obj or 'Â' in obj:
+                return obj.encode('latin-1').decode('utf-8')
+        except (UnicodeDecodeError, UnicodeEncodeError):
+            pass
+    return obj
+
+
 # --- Native Tool Definitions ---
 NATIVE_TOOLS = [
     {"type": "function", "function": {"name": "executePwsh", "description": "Execute a shell command. Automatically handles interactive prompts; if input is needed, returns status=need_input with sessionId + prompt. Resume by calling with sessionId + input.", "parameters": {"type": "object", "properties": {"command": {"type": "string", "description": "Command to execute (required for new sessions)"}, "timeout": {"type": "integer", "description": "Timeout in seconds (default 60)"}, "interactiveResponses": {"type": ["array", "object"], "items": {"type": "string"}, "additionalProperties": {"type": "string"}, "description": "Optional: list of responses (e.g., ['Y','Y','N']) or map of prompt->response (e.g., {'package name': 'my-app', 'license': 'MIT', '*': ''})"}, "sessionId": {"type": "integer", "description": "Continue an interactive session (from status=need_input)"}, "input": {"type": "string", "description": "One line of input to send to an interactive session"}}, "required": []}}},
@@ -688,6 +705,8 @@ class Agent:
                         tc = tool_calls_data[idx]
                         try:
                             args = json.loads(tc['arguments']) if tc['arguments'] else {}
+                            # Fix double-encoding in all string arguments
+                            args = _fix_encoding_in_dict(args)
                         except:
                             args = {}
                         if tc['name']:
@@ -703,6 +722,8 @@ class Agent:
                         if tc.get("type") == "function":
                             try:
                                 args = json.loads(tc["function"]["arguments"])
+                                # Fix double-encoding in all string arguments
+                                args = _fix_encoding_in_dict(args)
                             except:
                                 args = {}
                             parsed_calls.append({"id": tc["id"], "name": tc["function"]["name"], "args": args})
@@ -853,42 +874,11 @@ def execute_tool(tool_call: dict) -> str:
         elif name == "deleteFile":
             return json.dumps(delete_file(args["path"]))
         elif name == "fsWrite":
-            # Fix double-encoding if present
-            content = args["content"]
-            if isinstance(content, str):
-                try:
-                    if 'Ã' in content or 'Â' in content:
-                        content = content.encode('latin-1').decode('utf-8')
-                except (UnicodeDecodeError, UnicodeEncodeError):
-                    pass
-            return json.dumps(fs_write(args["path"], content))
+            return json.dumps(fs_write(args["path"], args["content"]))
         elif name == "fsAppend":
-            # Fix double-encoding if present
-            content = args["content"]
-            if isinstance(content, str):
-                try:
-                    if 'Ã' in content or 'Â' in content:
-                        content = content.encode('latin-1').decode('utf-8')
-                except (UnicodeDecodeError, UnicodeEncodeError):
-                    pass
-            return json.dumps(fs_append(args["path"], content))
+            return json.dumps(fs_append(args["path"], args["content"]))
         elif name == "strReplace":
-            # Fix double-encoding if present
-            old = args["old"]
-            new = args["new"]
-            if isinstance(old, str):
-                try:
-                    if 'Ã' in old or 'Â' in old:
-                        old = old.encode('latin-1').decode('utf-8')
-                except (UnicodeDecodeError, UnicodeEncodeError):
-                    pass
-            if isinstance(new, str):
-                try:
-                    if 'Ã' in new or 'Â' in new:
-                        new = new.encode('latin-1').decode('utf-8')
-                except (UnicodeDecodeError, UnicodeEncodeError):
-                    pass
-            return json.dumps(str_replace(args["path"], old, new))
+            return json.dumps(str_replace(args["path"], args["old"], args["new"]))
         elif name == "getDiagnostics":
             return json.dumps(get_diagnostics(args["path"]))
         elif name == "propertyCoverage":
