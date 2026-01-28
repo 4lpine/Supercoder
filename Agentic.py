@@ -853,11 +853,42 @@ def execute_tool(tool_call: dict) -> str:
         elif name == "deleteFile":
             return json.dumps(delete_file(args["path"]))
         elif name == "fsWrite":
-            return json.dumps(fs_write(args["path"], args["content"]))
+            # Fix double-encoding if present
+            content = args["content"]
+            if isinstance(content, str):
+                try:
+                    if 'Ã' in content or 'Â' in content:
+                        content = content.encode('latin-1').decode('utf-8')
+                except (UnicodeDecodeError, UnicodeEncodeError):
+                    pass
+            return json.dumps(fs_write(args["path"], content))
         elif name == "fsAppend":
-            return json.dumps(fs_append(args["path"], args["content"]))
+            # Fix double-encoding if present
+            content = args["content"]
+            if isinstance(content, str):
+                try:
+                    if 'Ã' in content or 'Â' in content:
+                        content = content.encode('latin-1').decode('utf-8')
+                except (UnicodeDecodeError, UnicodeEncodeError):
+                    pass
+            return json.dumps(fs_append(args["path"], content))
         elif name == "strReplace":
-            return json.dumps(str_replace(args["path"], args["old"], args["new"]))
+            # Fix double-encoding if present
+            old = args["old"]
+            new = args["new"]
+            if isinstance(old, str):
+                try:
+                    if 'Ã' in old or 'Â' in old:
+                        old = old.encode('latin-1').decode('utf-8')
+                except (UnicodeDecodeError, UnicodeEncodeError):
+                    pass
+            if isinstance(new, str):
+                try:
+                    if 'Ã' in new or 'Â' in new:
+                        new = new.encode('latin-1').decode('utf-8')
+                except (UnicodeDecodeError, UnicodeEncodeError):
+                    pass
+            return json.dumps(str_replace(args["path"], old, new))
         elif name == "getDiagnostics":
             return json.dumps(get_diagnostics(args["path"]))
         elif name == "propertyCoverage":

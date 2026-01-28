@@ -32,6 +32,20 @@ if sys.platform == 'win32':
         sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')
         sys.stdin = codecs.getreader('utf-8')(sys.stdin.buffer, 'strict')
 
+def fix_double_encoding(text: str) -> str:
+    """Fix double-encoded UTF-8 text (common issue with some LLM APIs)."""
+    if not text:
+        return text
+    try:
+        # Try to detect and fix double-encoding
+        # If text contains sequences like Ã¢Â€Â¢, it's likely double-encoded
+        if 'Ã' in text or 'Â' in text:
+            # Encode as latin-1 then decode as utf-8
+            return text.encode('latin-1').decode('utf-8')
+    except (UnicodeDecodeError, UnicodeEncodeError):
+        pass
+    return text
+
 import tools
 from Agentic import Agent, execute_tool, MODEL_LIMITS, TokenManager
 
@@ -783,6 +797,15 @@ def _print_completion_box(summary: str, success: bool = True) -> None:
     """Print a nice completion box with the summary (with markdown rendering and syntax highlighting)."""
     import sys
     import re
+    
+    # Fix double-encoding if present
+    if isinstance(summary, str):
+        try:
+            if 'Ã' in summary or 'Â' in summary:
+                summary = summary.encode('latin-1').decode('utf-8')
+        except (UnicodeDecodeError, UnicodeEncodeError):
+            pass
+    
     icon = "✓" if success else "x"
     color = C.GREEN if success else C.RED
     border_color = C.BPURPLE
