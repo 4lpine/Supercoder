@@ -100,10 +100,13 @@ def _fix_encoding_in_dict(obj):
         return [_fix_encoding_in_dict(item) for item in obj]
     elif isinstance(obj, str):
         try:
-            # Check for telltale signs of double-encoding
-            if 'Ã' in obj or 'Â' in obj:
-                return obj.encode('latin-1').decode('utf-8')
-        except (UnicodeDecodeError, UnicodeEncodeError):
+            # Try to detect double-encoding by attempting the fix
+            # If it succeeds and produces valid UTF-8, use it
+            fixed = obj.encode('latin-1').decode('utf-8')
+            # Only use the fixed version if it's different and contains non-ASCII
+            if fixed != obj and any(ord(c) > 127 for c in fixed):
+                return fixed
+        except (UnicodeDecodeError, UnicodeEncodeError, AttributeError):
             pass
     return obj
 
