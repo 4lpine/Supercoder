@@ -16,3 +16,5 @@ build/
 Thumbs.db
 test_*.py
 *_test.py
+tokens.txt
+.Information/tokens.txt
