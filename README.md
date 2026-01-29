@@ -201,6 +201,11 @@ Supercoder:
 - Supabase support (query, insert, update, delete)
 - Table listing and schema inspection
 - Row counting with filters
+- PostgreSQL support (15+ tools)
+- Direct database connections
+- Transaction management
+- Parameterized queries for security
+- Multiple connection support
 
 ---
 

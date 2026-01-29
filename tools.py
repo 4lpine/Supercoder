@@ -2269,6 +2269,7 @@ def load_context_guide(guide_name: str) -> Dict[str, Any]:
     Available guides:
     - "web-apps": Complete guide for building web applications with Next.js + Supabase
     - "supabase-cli-guide": Comprehensive Supabase CLI usage guide
+    - "postgres-guide": Comprehensive PostgreSQL database integration guide
     
     Returns:
         Guide content and metadata
@@ -2281,7 +2282,7 @@ def load_context_guide(guide_name: str) -> Dict[str, Any]:
         if not guide_path.exists():
             return {
                 "error": f"Guide '{guide_name}' not found",
-                "available_guides": ["web-apps", "supabase-cli-guide"]
+                "available_guides": ["web-apps", "supabase-cli-guide", "postgres-guide"]
             }
         
         content = guide_path.read_text(encoding='utf-8')
@@ -2297,3 +2298,587 @@ def load_context_guide(guide_name: str) -> Dict[str, Any]:
         return {"error": str(e)}
 
 
+
+# ==============================================================================
+# PostgreSQL Database Integration
+# ==============================================================================
+
+_postgres_connections: Dict[str, Any] = {}
+
+def postgres_connect(
+    connection_name: str = "default",
+    host: str = "localhost",
+    port: int = 5432,
+    database: str = None,
+    user: str = None,
+    password: str = None,
+    connection_string: str = None
+) -> Dict[str, Any]:
+    """
+    Connect to a PostgreSQL database.
+    
+    Args:
+        connection_name: Name for this connection (default: "default")
+        host: Database host (default: localhost)
+        port: Database port (default: 5432)
+        database: Database name
+        user: Username
+        password: Password
+        connection_string: Full connection string (overrides other params)
+            Format: postgresql://user:password@host:port/database
+    
+    Returns:
+        Connection status and info
+    """
+    try:
+        import psycopg2
+        from psycopg2 import pool
+    except ImportError:
+        return {
+            "error": "psycopg2 not installed. Install with: pip install psycopg2-binary"
+        }
+    
+    try:
+        if connection_string:
+            conn = psycopg2.connect(connection_string)
+        else:
+            if not all([database, user, password]):
+                return {
+                    "error": "Missing required parameters: database, user, password (or provide connection_string)"
+                }
+            conn = psycopg2.connect(
+                host=host,
+                port=port,
+                database=database,
+                user=user,
+                password=password
+            )
+        
+        # Test connection
+        cursor = conn.cursor()
+        cursor.execute("SELECT version();")
+        version = cursor.fetchone()[0]
+        cursor.close()
+        
+        _postgres_connections[connection_name] = conn
+        
+        return {
+            "connection_name": connection_name,
+            "status": "connected",
+            "database": database or "from connection string",
+            "host": host,
+            "port": port,
+            "version": version
+        }
+    
+    except Exception as e:
+        return {"error": f"Connection failed: {str(e)}"}
+
+
+def postgres_disconnect(connection_name: str = "default") -> Dict[str, Any]:
+    """
+    Disconnect from a PostgreSQL database.
+    
+    Args:
+        connection_name: Name of the connection to close
+    
+    Returns:
+        Disconnection status
+    """
+    if connection_name not in _postgres_connections:
+        return {"error": f"Connection '{connection_name}' not found"}
+    
+    try:
+        _postgres_connections[connection_name].close()
+        del _postgres_connections[connection_name]
+        return {
+            "connection_name": connection_name,
+            "status": "disconnected"
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def postgres_list_connections() -> Dict[str, Any]:
+    """
+    List all active PostgreSQL connections.
+    
+    Returns:
+        List of connection names and their status
+    """
+    connections = []
+    for name, conn in _postgres_connections.items():
+        try:
+            # Check if connection is alive
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1;")
+            cursor.close()
+            status = "active"
+        except:
+            status = "closed"
+        
+        connections.append({
+            "name": name,
+            "status": status
+        })
+    
+    return {"connections": connections}
+
+
+def postgres_query(
+    query: str,
+    params: List[Any] = None,
+    connection_name: str = "default",
+    fetch_all: bool = True
+) -> Dict[str, Any]:
+    """
+    Execute a SELECT query and return results.
+    
+    Args:
+        query: SQL SELECT query
+        params: Query parameters (for parameterized queries)
+        connection_name: Name of the connection to use
+        fetch_all: If True, fetch all rows; if False, fetch one row
+    
+    Returns:
+        Query results with column names
+    """
+    if connection_name not in _postgres_connections:
+        return {"error": f"Connection '{connection_name}' not found. Use postgres_connect first."}
+    
+    try:
+        conn = _postgres_connections[connection_name]
+        cursor = conn.cursor()
+        
+        if params:
+            cursor.execute(query, params)
+        else:
+            cursor.execute(query)
+        
+        # Get column names
+        columns = [desc[0] for desc in cursor.description] if cursor.description else []
+        
+        # Fetch results
+        if fetch_all:
+            rows = cursor.fetchall()
+        else:
+            row = cursor.fetchone()
+            rows = [row] if row else []
+        
+        cursor.close()
+        
+        # Convert to list of dicts
+        results = []
+        for row in rows:
+            results.append(dict(zip(columns, row)))
+        
+        return {
+            "query": query,
+            "row_count": len(results),
+            "columns": columns,
+            "rows": results
+        }
+    
+    except Exception as e:
+        return {"error": f"Query failed: {str(e)}"}
+
+
+def postgres_execute(
+    query: str,
+    params: List[Any] = None,
+    connection_name: str = "default",
+    commit: bool = True
+) -> Dict[str, Any]:
+    """
+    Execute an INSERT, UPDATE, DELETE, or DDL query.
+    
+    Args:
+        query: SQL query (INSERT, UPDATE, DELETE, CREATE, ALTER, DROP, etc.)
+        params: Query parameters (for parameterized queries)
+        connection_name: Name of the connection to use
+        commit: Whether to commit the transaction (default: True)
+    
+    Returns:
+        Execution status and affected row count
+    """
+    if connection_name not in _postgres_connections:
+        return {"error": f"Connection '{connection_name}' not found. Use postgres_connect first."}
+    
+    try:
+        conn = _postgres_connections[connection_name]
+        cursor = conn.cursor()
+        
+        if params:
+            cursor.execute(query, params)
+        else:
+            cursor.execute(query)
+        
+        affected_rows = cursor.rowcount
+        
+        if commit:
+            conn.commit()
+        
+        cursor.close()
+        
+        return {
+            "query": query,
+            "affected_rows": affected_rows,
+            "status": "success",
+            "committed": commit
+        }
+    
+    except Exception as e:
+        conn.rollback()
+        return {"error": f"Execution failed: {str(e)}"}
+
+
+def postgres_list_tables(
+    connection_name: str = "default",
+    schema: str = "public"
+) -> Dict[str, Any]:
+    """
+    List all tables in the database.
+    
+    Args:
+        connection_name: Name of the connection to use
+        schema: Schema name (default: public)
+    
+    Returns:
+        List of table names
+    """
+    query = """
+        SELECT table_name 
+        FROM information_schema.tables 
+        WHERE table_schema = %s 
+        AND table_type = 'BASE TABLE'
+        ORDER BY table_name;
+    """
+    
+    result = postgres_query(query, params=[schema], connection_name=connection_name)
+    
+    if "error" in result:
+        return result
+    
+    tables = [row["table_name"] for row in result["rows"]]
+    
+    return {
+        "schema": schema,
+        "table_count": len(tables),
+        "tables": tables
+    }
+
+
+def postgres_describe_table(
+    table_name: str,
+    connection_name: str = "default",
+    schema: str = "public"
+) -> Dict[str, Any]:
+    """
+    Get detailed information about a table's structure.
+    
+    Args:
+        table_name: Name of the table
+        connection_name: Name of the connection to use
+        schema: Schema name (default: public)
+    
+    Returns:
+        Table structure with columns, types, constraints
+    """
+    query = """
+        SELECT 
+            column_name,
+            data_type,
+            character_maximum_length,
+            is_nullable,
+            column_default
+        FROM information_schema.columns
+        WHERE table_schema = %s AND table_name = %s
+        ORDER BY ordinal_position;
+    """
+    
+    result = postgres_query(query, params=[schema, table_name], connection_name=connection_name)
+    
+    if "error" in result:
+        return result
+    
+    # Get primary keys
+    pk_query = """
+        SELECT a.attname
+        FROM pg_index i
+        JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+        WHERE i.indrelid = %s::regclass AND i.indisprimary;
+    """
+    
+    pk_result = postgres_query(
+        pk_query, 
+        params=[f"{schema}.{table_name}"], 
+        connection_name=connection_name
+    )
+    
+    primary_keys = [row["attname"] for row in pk_result.get("rows", [])] if "rows" in pk_result else []
+    
+    return {
+        "table_name": table_name,
+        "schema": schema,
+        "columns": result["rows"],
+        "primary_keys": primary_keys,
+        "column_count": len(result["rows"])
+    }
+
+
+def postgres_insert(
+    table_name: str,
+    data: Dict[str, Any],
+    connection_name: str = "default",
+    schema: str = "public",
+    returning: str = None
+) -> Dict[str, Any]:
+    """
+    Insert a row into a table.
+    
+    Args:
+        table_name: Name of the table
+        data: Dictionary of column:value pairs
+        connection_name: Name of the connection to use
+        schema: Schema name (default: public)
+        returning: Column to return (e.g., "id" for auto-generated IDs)
+    
+    Returns:
+        Insert status and optionally returned value
+    """
+    if not data:
+        return {"error": "No data provided"}
+    
+    columns = list(data.keys())
+    values = list(data.values())
+    placeholders = ["%s"] * len(values)
+    
+    query = f"""
+        INSERT INTO {schema}.{table_name} ({', '.join(columns)})
+        VALUES ({', '.join(placeholders)})
+    """
+    
+    if returning:
+        query += f" RETURNING {returning}"
+    
+    if returning:
+        result = postgres_query(query, params=values, connection_name=connection_name, fetch_all=False)
+        if "error" in result:
+            return result
+        return {
+            "status": "success",
+            "table": table_name,
+            "inserted": data,
+            "returned": result["rows"][0] if result["rows"] else None
+        }
+    else:
+        result = postgres_execute(query, params=values, connection_name=connection_name)
+        if "error" in result:
+            return result
+        return {
+            "status": "success",
+            "table": table_name,
+            "inserted": data,
+            "affected_rows": result["affected_rows"]
+        }
+
+
+def postgres_update(
+    table_name: str,
+    data: Dict[str, Any],
+    where: str,
+    where_params: List[Any] = None,
+    connection_name: str = "default",
+    schema: str = "public"
+) -> Dict[str, Any]:
+    """
+    Update rows in a table.
+    
+    Args:
+        table_name: Name of the table
+        data: Dictionary of column:value pairs to update
+        where: WHERE clause (without the WHERE keyword)
+        where_params: Parameters for the WHERE clause
+        connection_name: Name of the connection to use
+        schema: Schema name (default: public)
+    
+    Returns:
+        Update status and affected row count
+    """
+    if not data:
+        return {"error": "No data provided"}
+    
+    set_clauses = [f"{col} = %s" for col in data.keys()]
+    values = list(data.values())
+    
+    if where_params:
+        values.extend(where_params)
+    
+    query = f"""
+        UPDATE {schema}.{table_name}
+        SET {', '.join(set_clauses)}
+        WHERE {where}
+    """
+    
+    result = postgres_execute(query, params=values, connection_name=connection_name)
+    
+    if "error" in result:
+        return result
+    
+    return {
+        "status": "success",
+        "table": table_name,
+        "updated": data,
+        "where": where,
+        "affected_rows": result["affected_rows"]
+    }
+
+
+def postgres_delete(
+    table_name: str,
+    where: str,
+    where_params: List[Any] = None,
+    connection_name: str = "default",
+    schema: str = "public"
+) -> Dict[str, Any]:
+    """
+    Delete rows from a table.
+    
+    Args:
+        table_name: Name of the table
+        where: WHERE clause (without the WHERE keyword)
+        where_params: Parameters for the WHERE clause
+        connection_name: Name of the connection to use
+        schema: Schema name (default: public)
+    
+    Returns:
+        Delete status and affected row count
+    """
+    query = f"""
+        DELETE FROM {schema}.{table_name}
+        WHERE {where}
+    """
+    
+    result = postgres_execute(query, params=where_params, connection_name=connection_name)
+    
+    if "error" in result:
+        return result
+    
+    return {
+        "status": "success",
+        "table": table_name,
+        "where": where,
+        "affected_rows": result["affected_rows"]
+    }
+
+
+def postgres_transaction_begin(connection_name: str = "default") -> Dict[str, Any]:
+    """
+    Begin a transaction (for manual transaction control).
+    
+    Args:
+        connection_name: Name of the connection to use
+    
+    Returns:
+        Transaction status
+    """
+    if connection_name not in _postgres_connections:
+        return {"error": f"Connection '{connection_name}' not found"}
+    
+    try:
+        conn = _postgres_connections[connection_name]
+        # PostgreSQL connections are always in a transaction, but we can mark it
+        return {
+            "status": "transaction_started",
+            "connection_name": connection_name,
+            "note": "Use postgres_execute with commit=False, then call postgres_transaction_commit or postgres_transaction_rollback"
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def postgres_transaction_commit(connection_name: str = "default") -> Dict[str, Any]:
+    """
+    Commit the current transaction.
+    
+    Args:
+        connection_name: Name of the connection to use
+    
+    Returns:
+        Commit status
+    """
+    if connection_name not in _postgres_connections:
+        return {"error": f"Connection '{connection_name}' not found"}
+    
+    try:
+        conn = _postgres_connections[connection_name]
+        conn.commit()
+        return {
+            "status": "committed",
+            "connection_name": connection_name
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def postgres_transaction_rollback(connection_name: str = "default") -> Dict[str, Any]:
+    """
+    Rollback the current transaction.
+    
+    Args:
+        connection_name: Name of the connection to use
+    
+    Returns:
+        Rollback status
+    """
+    if connection_name not in _postgres_connections:
+        return {"error": f"Connection '{connection_name}' not found"}
+    
+    try:
+        conn = _postgres_connections[connection_name]
+        conn.rollback()
+        return {
+            "status": "rolled_back",
+            "connection_name": connection_name
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def postgres_count_rows(
+    table_name: str,
+    where: str = None,
+    where_params: List[Any] = None,
+    connection_name: str = "default",
+    schema: str = "public"
+) -> Dict[str, Any]:
+    """
+    Count rows in a table with optional filtering.
+    
+    Args:
+        table_name: Name of the table
+        where: Optional WHERE clause (without the WHERE keyword)
+        where_params: Parameters for the WHERE clause
+        connection_name: Name of the connection to use
+        schema: Schema name (default: public)
+    
+    Returns:
+        Row count
+    """
+    query = f"SELECT COUNT(*) as count FROM {schema}.{table_name}"
+    
+    if where:
+        query += f" WHERE {where}"
+    
+    result = postgres_query(query, params=where_params, connection_name=connection_name, fetch_all=False)
+    
+    if "error" in result:
+        return result
+    
+    count = result["rows"][0]["count"] if result["rows"] else 0
+    
+    return {
+        "table": table_name,
+        "count": count,
+        "where": where
+    }

@@ -15,6 +15,9 @@ webdriver-manager>=4.0.1
 # Supabase integration
 supabase>=2.0.0
 
+# PostgreSQL integration
+psycopg2-binary>=2.9.9
+
 # Image processing
 Pillow>=10.1.0
 
