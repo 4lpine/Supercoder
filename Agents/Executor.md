@@ -376,6 +376,305 @@ if result["status"] == "need_input":
 executePwsh("cd chat-app; supabase gen types typescript --local > lib/database.types.ts")
 ```
 
+**POSTGRESQL DATABASE INTEGRATION**
+
+Supercoder has comprehensive PostgreSQL integration with 15+ specialized tools for direct database operations.
+
+**When to use PostgreSQL tools:**
+- User asks to connect to a PostgreSQL database
+- User wants to query, insert, update, or delete data directly
+- User needs to inspect database schema (tables, columns, types)
+- User wants to perform database migrations or schema changes
+- User needs transaction management for data integrity
+- User is working with an existing PostgreSQL database (not Supabase)
+
+**Available PostgreSQL Tools:**
+
+Connection Management:
+- `postgresConnect(connectionName?, host?, port?, database?, user?, password?, connectionString?)` - Connect to PostgreSQL
+- `postgresDisconnect(connectionName?)` - Close database connection
+- `postgresListConnections()` - List all active connections
+
+Schema Inspection:
+- `postgresListTables(connectionName?, schema?)` - List all tables in schema
+- `postgresDescribeTable(tableName, connectionName?, schema?)` - Get table structure (columns, types, constraints, primary keys)
+- `postgresCountRows(tableName, where?, whereParams?, connectionName?, schema?)` - Count rows with optional filtering
+
+CRUD Operations:
+- `postgresQuery(query, params?, connectionName?, fetchAll?)` - Execute SELECT queries
+- `postgresInsert(tableName, data, connectionName?, schema?, returning?)` - Insert rows (returns auto-generated IDs if specified)
+- `postgresUpdate(tableName, data, where, whereParams?, connectionName?, schema?)` - Update rows
+- `postgresDelete(tableName, where, whereParams?, connectionName?, schema?)` - Delete rows
+- `postgresExecute(query, params?, connectionName?, commit?)` - Execute any SQL (INSERT, UPDATE, DELETE, CREATE, ALTER, DROP)
+
+Transaction Management:
+- `postgresTransactionBegin(connectionName?)` - Start transaction
+- `postgresTransactionCommit(connectionName?)` - Commit transaction
+- `postgresTransactionRollback(connectionName?)` - Rollback transaction
+
+**Connection Methods:**
+
+**Method 1: Connection String (Recommended)**
+```python
+postgresConnect(
+    connectionName="mydb",
+    connectionString="postgresql://username:password@localhost:5432/database"
+)
+```
+
+**Method 2: Individual Parameters**
+```python
+postgresConnect(
+    connectionName="mydb",
+    host="localhost",
+    port=5432,
+    database="mydatabase",
+    user="username",
+    password="password"
+)
+```
+
+**Method 3: Environment Variables (Best Practice)**
+```python
+# User should set DATABASE_URL environment variable
+postgresConnect(
+    connectionName="prod",
+    connectionString=os.getenv("DATABASE_URL")
+)
+```
+
+**Common PostgreSQL Workflows:**
+
+**1. Connect and Inspect Database:**
+```python
+# Connect
+postgresConnect(
+    connectionName="mydb",
+    host="localhost",
+    database="myapp",
+    user="postgres",
+    password="password"
+)
+
+# List tables
+result = postgresListTables(connectionName="mydb")
+# Returns: {"tables": ["users", "posts", "comments"], "table_count": 3}
+
+# Describe table structure
+result = postgresDescribeTable(tableName="users", connectionName="mydb")
+# Returns: columns, types, primary keys, constraints
+```
+
+**2. Query Data:**
+```python
+# Simple query
+result = postgresQuery(
+    query="SELECT * FROM users WHERE age > %s",
+    params=[25],
+    connectionName="mydb"
+)
+# Returns: {"rows": [...], "columns": ["id", "name", "age"], "row_count": 10}
+
+# Complex query with JOINs
+result = postgresQuery(
+    query="""
+        SELECT u.name, COUNT(p.id) as post_count
+        FROM users u
+        LEFT JOIN posts p ON u.id = p.user_id
+        GROUP BY u.name
+        ORDER BY post_count DESC
+    """,
+    connectionName="mydb"
+)
+```
+
+**3. Insert Data:**
+```python
+# Insert single row
+result = postgresInsert(
+    tableName="users",
+    data={"email": "john@example.com", "name": "John Doe", "age": 30},
+    returning="id",
+    connectionName="mydb"
+)
+# Returns: {"returned": {"id": 42}, "status": "success"}
+
+# Insert multiple rows with transaction
+postgresTransactionBegin(connectionName="mydb")
+try:
+    for user in users:
+        postgresInsert(tableName="users", data=user, connectionName="mydb")
+    postgresTransactionCommit(connectionName="mydb")
+except:
+    postgresTransactionRollback(connectionName="mydb")
+```
+
+**4. Update Data:**
+```python
+# Update specific rows
+postgresUpdate(
+    tableName="users",
+    data={"status": "active", "last_login": "NOW()"},
+    where="email = %s",
+    whereParams=["john@example.com"],
+    connectionName="mydb"
+)
+# Returns: {"affected_rows": 1, "status": "success"}
+```
+
+**5. Delete Data:**
+```python
+# Delete with condition
+postgresDelete(
+    tableName="sessions",
+    where="expired = %s AND created_at < %s",
+    whereParams=[True, "2024-01-01"],
+    connectionName="mydb"
+)
+```
+
+**6. Execute Raw SQL:**
+```python
+# Create table
+postgresExecute(
+    query="""
+        CREATE TABLE IF NOT EXISTS products (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            price DECIMAL(10, 2),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """,
+    connectionName="mydb"
+)
+
+# Create index
+postgresExecute(
+    query="CREATE INDEX idx_users_email ON users(email)",
+    connectionName="mydb"
+)
+
+# Alter table
+postgresExecute(
+    query="ALTER TABLE products ADD COLUMN description TEXT",
+    connectionName="mydb"
+)
+```
+
+**7. Transaction Example (Money Transfer):**
+```python
+postgresTransactionBegin(connectionName="mydb")
+
+try:
+    # Deduct from account A
+    postgresExecute(
+        query="UPDATE accounts SET balance = balance - %s WHERE id = %s",
+        params=[100, 1],
+        commit=False,
+        connectionName="mydb"
+    )
+    
+    # Add to account B
+    postgresExecute(
+        query="UPDATE accounts SET balance = balance + %s WHERE id = %s",
+        params=[100, 2],
+        commit=False,
+        connectionName="mydb"
+    )
+    
+    # Commit if both succeeded
+    postgresTransactionCommit(connectionName="mydb")
+    print("Transfer completed successfully")
+    
+except Exception as e:
+    # Rollback on error
+    postgresTransactionRollback(connectionName="mydb")
+    print(f"Transfer failed: {e}")
+```
+
+**IMPORTANT: Security Best Practices**
+
+1. **Always use parameterized queries** (prevents SQL injection):
+   ```python
+   # ❌ BAD - SQL injection risk
+   postgresQuery(query=f"SELECT * FROM users WHERE name = '{user_input}'")
+   
+   # ✅ GOOD - safe
+   postgresQuery(query="SELECT * FROM users WHERE name = %s", params=[user_input])
+   ```
+
+2. **Never hardcode credentials** - use environment variables:
+   ```python
+   # ❌ BAD
+   postgresConnect(user="admin", password="secret123")
+   
+   # ✅ GOOD
+   postgresConnect(connectionString=os.getenv("DATABASE_URL"))
+   ```
+
+3. **Use transactions for related operations**:
+   ```python
+   # Ensures all operations succeed or none do
+   postgresTransactionBegin()
+   try:
+       postgresExecute(query1, commit=False)
+       postgresExecute(query2, commit=False)
+       postgresTransactionCommit()
+   except:
+       postgresTransactionRollback()
+   ```
+
+**Multiple Database Connections:**
+
+You can maintain multiple connections simultaneously:
+```python
+# Connect to production
+postgresConnect(
+    connectionName="prod",
+    connectionString="postgresql://user:pass@prod-server:5432/proddb"
+)
+
+# Connect to development
+postgresConnect(
+    connectionName="dev",
+    connectionString="postgresql://user:pass@localhost:5432/devdb"
+)
+
+# Use specific connection
+postgresQuery(query="SELECT * FROM users", connectionName="prod")
+postgresQuery(query="SELECT * FROM users", connectionName="dev")
+```
+
+**When User Asks About PostgreSQL:**
+
+If user says:
+- "Connect to my PostgreSQL database"
+- "Query the users table in PostgreSQL"
+- "Create a table in my database"
+- "Show me all tables in the database"
+- "Insert data into PostgreSQL"
+
+Then:
+1. Use `postgresConnect` to establish connection
+2. Use appropriate PostgreSQL tools for the task
+3. Always use parameterized queries for security
+4. Use transactions for multi-step operations
+5. Call `postgresDisconnect` when done (or keep connection for multiple operations)
+
+**For detailed PostgreSQL guide, use:**
+```python
+loadContextGuide("postgres-guide")
+```
+
+This loads comprehensive documentation with:
+- All connection methods
+- Complete CRUD examples
+- Advanced queries (JOINs, CTEs, window functions)
+- Transaction patterns
+- Security best practices
+- Performance tips
+- Troubleshooting guide
+
 **Handling Interactive Prompts:**
 
 **Recommended: Session-based approach (most reliable)**
@@ -430,6 +729,22 @@ System & Environment:
 User Interaction:
 - `interactWithUser(message, interactionType)` - Communicate with user (complete/question/error)
 - `finish(summary, status?)` - Signal task completion with summary
+
+PostgreSQL Database:
+- `postgresConnect(connectionName?, host?, port?, database?, user?, password?, connectionString?)` - Connect to PostgreSQL database
+- `postgresDisconnect(connectionName?)` - Close database connection
+- `postgresListConnections()` - List all active database connections
+- `postgresListTables(connectionName?, schema?)` - List all tables in schema
+- `postgresDescribeTable(tableName, connectionName?, schema?)` - Get table structure (columns, types, primary keys)
+- `postgresQuery(query, params?, connectionName?, fetchAll?)` - Execute SELECT queries (use parameterized queries!)
+- `postgresInsert(tableName, data, connectionName?, schema?, returning?)` - Insert rows into table
+- `postgresUpdate(tableName, data, where, whereParams?, connectionName?, schema?)` - Update rows in table
+- `postgresDelete(tableName, where, whereParams?, connectionName?, schema?)` - Delete rows from table
+- `postgresExecute(query, params?, connectionName?, commit?)` - Execute any SQL (CREATE, ALTER, DROP, etc.)
+- `postgresCountRows(tableName, where?, whereParams?, connectionName?, schema?)` - Count rows with optional filtering
+- `postgresTransactionBegin(connectionName?)` - Start transaction for manual control
+- `postgresTransactionCommit(connectionName?)` - Commit current transaction
+- `postgresTransactionRollback(connectionName?)` - Rollback current transaction
 
 
 
