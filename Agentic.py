@@ -482,9 +482,33 @@ class Agent:
             self.messages = self.messages[-(keep_last):] if keep_last > 0 else []
         print(f"[Cleared history, kept {len(self.messages)} messages]")
 
-    def get_token_usage(self) -> dict:
+    def get_token_usage(self, include_context: bool = True) -> dict:
+        """
+        Calculate token usage for the current conversation.
+        
+        Args:
+            include_context: If True, includes pinned files and context that would be sent with next message
+        
+        Returns:
+            Dict with used, max, available tokens and percentage
+        """
+        # Count base conversation messages
         used = self.token_counter.count_messages(self.messages)
-        return {"used": used, "max": self.max_context, "available": self.max_context - used - self.reserved_output, "percent": round(used / self.max_context * 100, 1)}
+        
+        # If requested, add the context that would be sent with the next message
+        if include_context:
+            # Build context string to see what would be included
+            context_str = self._build_context_string("")
+            if context_str:
+                context_tokens = self.token_counter.count(context_str)
+                used += context_tokens
+        
+        return {
+            "used": used, 
+            "max": self.max_context, 
+            "available": self.max_context - used - self.reserved_output, 
+            "percent": round(used / self.max_context * 100, 1)
+        }
 
     def AddToolResult(self, tool_call_id: str, tool_name: str, result: str):
         self.messages.append({"role": "tool", "tool_call_id": tool_call_id, "content": str(result)})
