@@ -2891,19 +2891,16 @@ def postgres_count_rows(
 def image_generate(
     prompt: str,
     model: str = "google/gemini-2.5-flash-image",
-    aspect_ratio: str = "1:1",
-    image_size: str = "1024x1024",
     save_path: str = None,
     num_images: int = 1
 ) -> Dict[str, Any]:
     """
     Generate images from text prompts using OpenRouter image generation models.
+    The AI model automatically determines the best aspect ratio and size based on your prompt.
     
     Args:
-        prompt: Text description of the image to generate
+        prompt: Text description of the image to generate (be specific about what you want)
         model: Image generation model to use (default: google/gemini-2.5-flash-image)
-        aspect_ratio: Aspect ratio (1:1, 3:4, 4:3, 9:16, 16:9) - Gemini only
-        image_size: Image size (256x256, 512x512, 1024x1024, 2048x2048, 4K) - Gemini only
         save_path: Optional path to save the image (auto-generates if not provided)
         num_images: Number of images to generate (default: 1)
     
@@ -2924,7 +2921,7 @@ def image_generate(
         except Exception as e:
             return {"error": f"Failed to load API key: {e}"}
         
-        # Build request payload - simpler format
+        # Build request payload - let the model decide aspect ratio and size
         payload = {
             "model": model,
             "messages": [
@@ -2935,22 +2932,6 @@ def image_generate(
             ],
             "modalities": ["image", "text"]
         }
-        
-        # Add image config for Gemini models only
-        if "gemini" in model.lower():
-            image_config = {}
-            
-            # Only add aspect_ratio if it's not the default
-            if aspect_ratio and aspect_ratio != "1:1":
-                image_config["aspect_ratio"] = aspect_ratio
-            
-            # Only add image_size if it's not the default
-            if image_size and image_size != "1024x1024":
-                image_config["image_size"] = image_size
-            
-            # Only include image_config if we have settings
-            if image_config:
-                payload["image_config"] = image_config
         
         # Make API request
         response = requests.post(
@@ -3056,18 +3037,15 @@ def image_generate(
 def image_generate_batch(
     prompts: List[str],
     model: str = "google/gemini-2.5-flash-image",
-    aspect_ratio: str = "1:1",
-    image_size: str = "1024x1024",
     save_dir: str = None
 ) -> Dict[str, Any]:
     """
     Generate multiple images from a list of prompts.
+    The AI model automatically determines the best aspect ratio and size for each image.
     
     Args:
         prompts: List of text descriptions
         model: Image generation model to use
-        aspect_ratio: Aspect ratio for all images
-        image_size: Image size for all images
         save_dir: Directory to save images (default: .supercoder/images/)
     
     Returns:
@@ -3089,8 +3067,6 @@ def image_generate_batch(
         result = image_generate(
             prompt=prompt,
             model=model,
-            aspect_ratio=aspect_ratio,
-            image_size=image_size,
             save_path=str(save_path) if save_path else None
         )
         
@@ -3373,8 +3349,7 @@ def image_generate_for_project(
         
         result = image_generate(
             prompt=prompt,
-            save_path=str(save_path),
-            aspect_ratio="16:9" if project_type in ["banner", "website"] else "1:1"
+            save_path=str(save_path)
         )
         
         results.append({
