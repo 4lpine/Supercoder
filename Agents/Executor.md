@@ -753,6 +753,225 @@ This loads comprehensive documentation with:
 - Performance tips
 - Troubleshooting guide
 
+**IMAGE GENERATION**
+
+Supercoder has AI-powered image generation capabilities using OpenRouter's image models.
+
+**When to use image generation:**
+- Building websites or web apps that need graphics
+- Creating logos, icons, banners, backgrounds
+- Generating placeholder images for mockups
+- Creating illustrations for documentation
+- Designing UI elements
+- Making social media graphics
+- Prototyping visual designs
+
+**Available Image Generation Tools:**
+
+1. **imageGenerate** - Generate single or multiple images from text
+2. **imageGenerateBatch** - Generate many images efficiently
+3. **imageGenerateForProject** - Auto-generate complete image sets for projects
+4. **imageEdit** - Edit existing images with AI
+5. **imageListModels** - See available models and capabilities
+
+**Common Image Generation Workflows:**
+
+**1. Generate a Single Image:**
+```python
+result = imageGenerate(
+    prompt="Modern minimalist logo for a tech startup, blue and white colors",
+    aspectRatio="1:1",
+    imageSize="1024x1024"
+)
+# Returns: {"status": "success", "images": [{"path": ".supercoder/images/generated_20240201_143022_1.png"}]}
+```
+
+**2. Generate Multiple Images:**
+```python
+result = imageGenerateBatch(
+    prompts=[
+        "Hero section background with gradient, modern tech theme",
+        "Team photo placeholder, professional office setting",
+        "Call-to-action banner background, energetic and vibrant",
+        "Footer background, subtle and elegant"
+    ],
+    aspectRatio="16:9",
+    saveDir="my-website/public/images"
+)
+```
+
+**3. Generate Complete Image Set for Project:**
+```python
+# Automatically generates appropriate images for project type
+result = imageGenerateForProject(
+    projectType="website",  # Options: website, app, logo, banner, icon
+    saveDir="my-project/assets"
+)
+# Generates: hero background, team photo, tech background, CTA banner, etc.
+```
+
+**4. Edit an Existing Image:**
+```python
+result = imageEdit(
+    imagePath="logo.png",
+    prompt="Make the background transparent and add a subtle shadow"
+)
+```
+
+**5. Generate Images for Web App (Automatic):**
+```python
+# When building a web app, automatically generate needed images
+result = imageGenerateForProject(
+    projectType="app",
+    descriptions=[
+        "App icon, modern and colorful",
+        "Splash screen background, gradient",
+        "Onboarding illustration 1: welcome screen",
+        "Onboarding illustration 2: features overview",
+        "Empty state illustration: no data yet"
+    ]
+)
+```
+
+**Image Generation Best Practices:**
+
+1. **Be Specific in Prompts:**
+   ```python
+   # ❌ Bad
+   imageGenerate(prompt="logo")
+   
+   # ✅ Good
+   imageGenerate(
+       prompt="Modern minimalist logo for a coffee shop, warm brown and cream colors, coffee bean icon, clean typography"
+   )
+   ```
+
+2. **Choose Right Aspect Ratio:**
+   - `1:1` - Logos, icons, profile pictures, square images
+   - `16:9` - Website banners, hero sections, video thumbnails
+   - `9:16` - Mobile app screens, stories, vertical content
+   - `4:3` - Traditional photos, presentations
+   - `3:4` - Portrait photos, mobile content
+
+3. **Choose Right Size:**
+   - `256x256` - Small icons, thumbnails
+   - `512x512` - Medium icons, avatars
+   - `1024x1024` - Standard images, logos
+   - `2048x2048` - High-res images, print quality
+   - `4K` - Ultra high-res, large displays
+
+4. **Use imageGenerateForProject for Efficiency:**
+   ```python
+   # Instead of generating images one by one, use project generator
+   imageGenerateForProject(projectType="website")
+   # Automatically creates all needed images for a website
+   ```
+
+5. **Integrate with Web Projects:**
+   ```python
+   # Generate images, then use them in your HTML/React
+   result = imageGenerate(
+       prompt="Hero background, modern tech theme",
+       savePath="public/images/hero-bg.png",
+       aspectRatio="16:9"
+   )
+   
+   # Then in your code:
+   # <div style="background-image: url('/images/hero-bg.png')">
+   ```
+
+**Available Models:**
+
+```python
+# List all available models
+models = imageListModels()
+
+# Default (recommended): google/gemini-2.5-flash-image
+# - Fast generation
+# - Aspect ratio control
+# - Image size control
+# - High quality
+
+# Alternative: google/gemini-3-pro-image-preview
+# - Higher quality
+# - Slower generation
+
+# Alternative: openai/gpt-5-image
+# - Superior instruction following
+# - Better text rendering in images
+```
+
+**Automatic Image Generation for Web Projects:**
+
+When building web apps or websites, you should AUTOMATICALLY generate needed images:
+
+```python
+# 1. Build the web app
+# 2. Generate images for it
+result = imageGenerateForProject(
+    projectType="website",
+    saveDir="my-app/public/images"
+)
+
+# 3. Update code to use generated images
+# 4. Test with Selenium + Vision
+```
+
+**Example: Complete Web App with Images:**
+
+```python
+# 1. Create Next.js app
+executePwsh("npx create-next-app@latest my-app --typescript --tailwind --app")
+
+# 2. Generate images
+imageGenerateForProject(
+    projectType="website",
+    descriptions=[
+        "Hero section background, modern gradient, tech theme",
+        "Feature icon 1: speed and performance",
+        "Feature icon 2: security and privacy",
+        "Feature icon 3: scalability and growth",
+        "Call-to-action background, energetic and vibrant"
+    ],
+    saveDir="my-app/public/images"
+)
+
+# 3. Build the app using generated images
+# 4. Test with Selenium
+```
+
+**Integration with Vision Analysis:**
+
+You can generate images and then analyze them:
+
+```python
+# Generate an image
+result = imageGenerate(
+    prompt="Website hero section background",
+    savePath="hero-bg.png"
+)
+
+# Analyze it with vision
+analysis = visionAnalyzeUI(
+    screenshotPath="hero-bg.png",
+    prompt="Does this image work well as a hero background? Check colors, contrast, and visual appeal."
+)
+
+# If not good, regenerate with improvements
+if "issues" in analysis:
+    result = imageGenerate(
+        prompt="Website hero section background, improved based on feedback: " + analysis["suggestions"]
+    )
+```
+
+**Cost Considerations:**
+
+- Image generation costs vary by model
+- Gemini models: ~$0.01-0.05 per image
+- Higher resolution = higher cost
+- Batch generation is more efficient
+- Use appropriate size for your needs (don't generate 4K if you need 512x512)
+
 **Handling Interactive Prompts:**
 
 **Recommended: Session-based approach (most reliable)**
@@ -823,6 +1042,13 @@ PostgreSQL Database:
 - `postgresTransactionBegin(connectionName?)` - Start transaction for manual control
 - `postgresTransactionCommit(connectionName?)` - Commit current transaction
 - `postgresTransactionRollback(connectionName?)` - Rollback current transaction
+
+Image Generation:
+- `imageGenerate(prompt, model?, aspectRatio?, imageSize?, savePath?, numImages?)` - Generate images from text prompts using AI
+- `imageGenerateBatch(prompts, model?, aspectRatio?, imageSize?, saveDir?)` - Generate multiple images from list of prompts
+- `imageListModels()` - List available image generation models and their capabilities
+- `imageEdit(imagePath, prompt, model?, savePath?)` - Edit existing images based on text prompts
+- `imageGenerateForProject(projectType, descriptions?, saveDir?)` - Generate complete image sets for projects (website, app, logo, banner, icon)
 
 
 

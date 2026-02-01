@@ -2882,3 +2882,484 @@ def postgres_count_rows(
         "count": count,
         "where": where
     }
+
+
+# ==============================================================================
+# Image Generation (OpenRouter)
+# ==============================================================================
+
+def image_generate(
+    prompt: str,
+    model: str = "google/gemini-2.5-flash-image",
+    aspect_ratio: str = "1:1",
+    image_size: str = "1024x1024",
+    save_path: str = None,
+    num_images: int = 1
+) -> Dict[str, Any]:
+    """
+    Generate images from text prompts using OpenRouter image generation models.
+    
+    Args:
+        prompt: Text description of the image to generate
+        model: Image generation model to use (default: google/gemini-2.5-flash-image)
+        aspect_ratio: Aspect ratio (1:1, 3:4, 4:3, 9:16, 16:9) - Gemini only
+        image_size: Image size (256x256, 512x512, 1024x1024, 2048x2048, 4K) - Gemini only
+        save_path: Optional path to save the image (auto-generates if not provided)
+        num_images: Number of images to generate (default: 1)
+    
+    Returns:
+        Dict with generated image paths and metadata
+    """
+    try:
+        # Import required modules
+        import requests
+        import base64
+        from datetime import datetime
+        
+        # Get API key
+        try:
+            from Agentic import TokenManager
+            TokenManager.load_tokens()
+            api_key = TokenManager.get_token()
+        except Exception as e:
+            return {"error": f"Failed to load API key: {e}"}
+        
+        # Build request payload
+        payload = {
+            "model": model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            "modalities": ["image", "text"]
+        }
+        
+        # Add image config for Gemini models
+        if "gemini" in model.lower():
+            payload["image_config"] = {
+                "aspect_ratio": aspect_ratio,
+                "image_size": image_size
+            }
+        
+        # Make API request
+        response = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            },
+            json=payload,
+            timeout=120
+        )
+        
+        response.raise_for_status()
+        result = response.json()
+        
+        # Extract images from response
+        if not result.get("choices"):
+            return {"error": "No response from API"}
+        
+        message = result["choices"][0]["message"]
+        
+        if not message.get("images"):
+            return {
+                "error": "No images generated",
+                "response": message.get("content", "")
+            }
+        
+        # Process and save images
+        saved_images = []
+        
+        for idx, image_data in enumerate(message["images"]):
+            # Get base64 image data
+            image_url = image_data["image_url"]["url"]
+            
+            # Extract base64 data (remove data:image/png;base64, prefix)
+            if "base64," in image_url:
+                base64_data = image_url.split("base64,")[1]
+            else:
+                base64_data = image_url
+            
+            # Decode base64 to bytes
+            image_bytes = base64.b64decode(base64_data)
+            
+            # Generate save path if not provided
+            if save_path:
+                if num_images > 1:
+                    # Add index to filename
+                    path_obj = Path(save_path)
+                    save_file = path_obj.parent / f"{path_obj.stem}_{idx+1}{path_obj.suffix}"
+                else:
+                    save_file = Path(save_path)
+            else:
+                # Auto-generate path in .supercoder/images/
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                images_dir = Path(".supercoder/images")
+                images_dir.mkdir(parents=True, exist_ok=True)
+                save_file = images_dir / f"generated_{timestamp}_{idx+1}.png"
+            
+            # Save image
+            save_file.parent.mkdir(parents=True, exist_ok=True)
+            save_file.write_bytes(image_bytes)
+            
+            saved_images.append({
+                "path": str(save_file),
+                "size_bytes": len(image_bytes),
+                "index": idx + 1
+            })
+        
+        return {
+            "status": "success",
+            "prompt": prompt,
+            "model": model,
+            "num_images": len(saved_images),
+            "images": saved_images,
+            "response_text": message.get("content", "")
+        }
+    
+    except requests.exceptions.RequestException as e:
+        return {"error": f"API request failed: {str(e)}"}
+    except Exception as e:
+        return {"error": f"Image generation failed: {str(e)}"}
+
+
+def image_generate_batch(
+    prompts: List[str],
+    model: str = "google/gemini-2.5-flash-image",
+    aspect_ratio: str = "1:1",
+    image_size: str = "1024x1024",
+    save_dir: str = None
+) -> Dict[str, Any]:
+    """
+    Generate multiple images from a list of prompts.
+    
+    Args:
+        prompts: List of text descriptions
+        model: Image generation model to use
+        aspect_ratio: Aspect ratio for all images
+        image_size: Image size for all images
+        save_dir: Directory to save images (default: .supercoder/images/)
+    
+    Returns:
+        Dict with results for each prompt
+    """
+    if not prompts:
+        return {"error": "No prompts provided"}
+    
+    results = []
+    
+    for idx, prompt in enumerate(prompts):
+        # Generate save path
+        if save_dir:
+            save_path = Path(save_dir) / f"image_{idx+1}.png"
+        else:
+            save_path = None
+        
+        # Generate image
+        result = image_generate(
+            prompt=prompt,
+            model=model,
+            aspect_ratio=aspect_ratio,
+            image_size=image_size,
+            save_path=str(save_path) if save_path else None
+        )
+        
+        results.append({
+            "prompt": prompt,
+            "result": result
+        })
+    
+    # Count successes and failures
+    successes = sum(1 for r in results if r["result"].get("status") == "success")
+    failures = len(results) - successes
+    
+    return {
+        "total": len(prompts),
+        "successes": successes,
+        "failures": failures,
+        "results": results
+    }
+
+
+def image_list_models() -> Dict[str, Any]:
+    """
+    List available image generation models on OpenRouter.
+    
+    Returns:
+        Dict with available models and their capabilities
+    """
+    models = [
+        {
+            "id": "google/gemini-2.5-flash-image",
+            "name": "Gemini 2.5 Flash Image",
+            "provider": "Google",
+            "features": [
+                "Fast generation",
+                "Aspect ratio control",
+                "Image size control",
+                "High quality"
+            ],
+            "aspect_ratios": ["1:1", "3:4", "4:3", "9:16", "16:9"],
+            "image_sizes": ["256x256", "512x512", "1024x1024", "2048x2048", "4K"],
+            "recommended": True
+        },
+        {
+            "id": "google/gemini-3-pro-image-preview",
+            "name": "Gemini 3 Pro Image (Nano Banana Pro)",
+            "provider": "Google",
+            "features": [
+                "Higher quality",
+                "Aspect ratio control",
+                "Image size control"
+            ],
+            "aspect_ratios": ["1:1", "3:4", "4:3", "9:16", "16:9"],
+            "image_sizes": ["256x256", "512x512", "1024x1024", "2048x2048", "4K"],
+            "recommended": False
+        },
+        {
+            "id": "openai/gpt-5-image",
+            "name": "GPT-5 Image",
+            "provider": "OpenAI",
+            "features": [
+                "Superior instruction following",
+                "Text rendering in images",
+                "Detailed image editing"
+            ],
+            "aspect_ratios": [],
+            "image_sizes": [],
+            "recommended": False
+        }
+    ]
+    
+    return {
+        "models": models,
+        "default": "google/gemini-2.5-flash-image",
+        "count": len(models)
+    }
+
+
+def image_edit(
+    image_path: str,
+    prompt: str,
+    model: str = "google/gemini-2.5-flash-image",
+    save_path: str = None
+) -> Dict[str, Any]:
+    """
+    Edit an existing image based on a text prompt.
+    
+    Args:
+        image_path: Path to the image to edit
+        prompt: Description of how to edit the image
+        model: Image generation model to use
+        save_path: Optional path to save the edited image
+    
+    Returns:
+        Dict with edited image path and metadata
+    """
+    try:
+        import requests
+        import base64
+        from datetime import datetime
+        
+        # Read the image
+        image_file = Path(image_path)
+        if not image_file.exists():
+            return {"error": f"Image not found: {image_path}"}
+        
+        # Encode image to base64
+        image_bytes = image_file.read_bytes()
+        base64_image = base64.b64encode(image_bytes).decode('utf-8')
+        
+        # Determine image type
+        ext = image_file.suffix.lower()
+        mime_types = {
+            '.png': 'image/png',
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.gif': 'image/gif',
+            '.webp': 'image/webp'
+        }
+        mime_type = mime_types.get(ext, 'image/png')
+        
+        # Get API key
+        try:
+            from Agentic import TokenManager
+            TokenManager.load_tokens()
+            api_key = TokenManager.get_token()
+        except Exception as e:
+            return {"error": f"Failed to load API key: {e}"}
+        
+        # Build request with image input
+        payload = {
+            "model": model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{mime_type};base64,{base64_image}"
+                            }
+                        },
+                        {
+                            "type": "text",
+                            "text": f"Edit this image: {prompt}"
+                        }
+                    ]
+                }
+            ],
+            "modalities": ["image", "text"]
+        }
+        
+        # Make API request
+        response = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            },
+            json=payload,
+            timeout=120
+        )
+        
+        response.raise_for_status()
+        result = response.json()
+        
+        # Extract edited image
+        if not result.get("choices"):
+            return {"error": "No response from API"}
+        
+        message = result["choices"][0]["message"]
+        
+        if not message.get("images"):
+            return {
+                "error": "No edited image generated",
+                "response": message.get("content", "")
+            }
+        
+        # Get base64 image data
+        image_url = message["images"][0]["image_url"]["url"]
+        
+        if "base64," in image_url:
+            base64_data = image_url.split("base64,")[1]
+        else:
+            base64_data = image_url
+        
+        # Decode base64 to bytes
+        edited_bytes = base64.b64decode(base64_data)
+        
+        # Generate save path if not provided
+        if save_path:
+            save_file = Path(save_path)
+        else:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            images_dir = Path(".supercoder/images")
+            images_dir.mkdir(parents=True, exist_ok=True)
+            save_file = images_dir / f"edited_{timestamp}.png"
+        
+        # Save edited image
+        save_file.parent.mkdir(parents=True, exist_ok=True)
+        save_file.write_bytes(edited_bytes)
+        
+        return {
+            "status": "success",
+            "original_image": image_path,
+            "edited_image": str(save_file),
+            "prompt": prompt,
+            "model": model,
+            "size_bytes": len(edited_bytes)
+        }
+    
+    except Exception as e:
+        return {"error": f"Image editing failed: {str(e)}"}
+
+
+def image_generate_for_project(
+    project_type: str,
+    descriptions: List[str] = None,
+    save_dir: str = None
+) -> Dict[str, Any]:
+    """
+    Generate a set of images for a specific project type (website, app, etc.).
+    
+    Args:
+        project_type: Type of project (website, app, logo, icon, banner, etc.)
+        descriptions: Optional list of specific image descriptions
+        save_dir: Directory to save images (default: project-specific folder)
+    
+    Returns:
+        Dict with generated images for the project
+    """
+    # Default descriptions based on project type
+    default_descriptions = {
+        "website": [
+            "Modern hero section background with gradient",
+            "Professional team photo placeholder",
+            "Abstract technology background",
+            "Call-to-action banner background"
+        ],
+        "app": [
+            "App icon with modern design",
+            "Splash screen background",
+            "Onboarding illustration 1",
+            "Onboarding illustration 2",
+            "Empty state illustration"
+        ],
+        "logo": [
+            "Professional company logo design",
+            "Logo variation for dark background",
+            "Favicon design"
+        ],
+        "banner": [
+            "Website banner 1920x400",
+            "Social media banner 1200x630",
+            "Email header banner"
+        ],
+        "icon": [
+            "Feature icon 1",
+            "Feature icon 2",
+            "Feature icon 3",
+            "Feature icon 4"
+        ]
+    }
+    
+    # Use provided descriptions or defaults
+    prompts = descriptions or default_descriptions.get(project_type, [f"{project_type} image"])
+    
+    # Set save directory
+    if not save_dir:
+        save_dir = Path(".supercoder/images") / project_type
+    else:
+        save_dir = Path(save_dir)
+    
+    save_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Generate images
+    results = []
+    
+    for idx, prompt in enumerate(prompts):
+        save_path = save_dir / f"{project_type}_{idx+1}.png"
+        
+        result = image_generate(
+            prompt=prompt,
+            save_path=str(save_path),
+            aspect_ratio="16:9" if project_type in ["banner", "website"] else "1:1"
+        )
+        
+        results.append({
+            "description": prompt,
+            "result": result
+        })
+    
+    successes = sum(1 for r in results if r["result"].get("status") == "success")
+    
+    return {
+        "project_type": project_type,
+        "save_dir": str(save_dir),
+        "total": len(prompts),
+        "successes": successes,
+        "results": results
+    }

@@ -202,7 +202,13 @@ NATIVE_TOOLS = [
     {"type": "function", "function": {"name": "postgresCountRows", "description": "Count rows in a table with optional filtering", "parameters": {"type": "object", "properties": {"tableName": {"type": "string", "description": "Table name"}, "where": {"type": "string", "description": "Optional WHERE clause (without WHERE keyword)"}, "whereParams": {"type": "array", "items": {"type": "string"}, "description": "Parameters for WHERE clause"}, "connectionName": {"type": "string", "description": "Connection name (default: 'default')"}, "schema": {"type": "string", "description": "Schema name (default: 'public')"}}, "required": ["tableName"]}}},
     {"type": "function", "function": {"name": "postgresTransactionBegin", "description": "Begin a transaction for manual transaction control", "parameters": {"type": "object", "properties": {"connectionName": {"type": "string", "description": "Connection name (default: 'default')"}}, "required": []}}},
     {"type": "function", "function": {"name": "postgresTransactionCommit", "description": "Commit the current transaction", "parameters": {"type": "object", "properties": {"connectionName": {"type": "string", "description": "Connection name (default: 'default')"}}, "required": []}}},
-    {"type": "function", "function": {"name": "postgresTransactionRollback", "description": "Rollback the current transaction", "parameters": {"type": "object", "properties": {"connectionName": {"type": "string", "description": "Connection name (default: 'default')"}}, "required": []}}}
+    {"type": "function", "function": {"name": "postgresTransactionRollback", "description": "Rollback the current transaction", "parameters": {"type": "object", "properties": {"connectionName": {"type": "string", "description": "Connection name (default: 'default')"}}, "required": []}}},
+    # Image Generation Tools
+    {"type": "function", "function": {"name": "imageGenerate", "description": "Generate images from text prompts using AI. Perfect for creating website assets, app graphics, logos, icons, backgrounds, and illustrations. Returns base64 images saved to files.", "parameters": {"type": "object", "properties": {"prompt": {"type": "string", "description": "Detailed text description of the image to generate"}, "model": {"type": "string", "description": "Image model (default: google/gemini-2.5-flash-image). Options: google/gemini-2.5-flash-image, google/gemini-3-pro-image-preview, openai/gpt-5-image"}, "aspectRatio": {"type": "string", "enum": ["1:1", "3:4", "4:3", "9:16", "16:9"], "description": "Aspect ratio (default: 1:1). Gemini models only."}, "imageSize": {"type": "string", "enum": ["256x256", "512x512", "1024x1024", "2048x2048", "4K"], "description": "Image size (default: 1024x1024). Gemini models only."}, "savePath": {"type": "string", "description": "Optional path to save image (auto-generates if not provided)"}, "numImages": {"type": "integer", "description": "Number of images to generate (default: 1)"}}, "required": ["prompt"]}}},
+    {"type": "function", "function": {"name": "imageGenerateBatch", "description": "Generate multiple images from a list of prompts efficiently. Great for creating image sets for projects.", "parameters": {"type": "object", "properties": {"prompts": {"type": "array", "items": {"type": "string"}, "description": "List of text descriptions for images to generate"}, "model": {"type": "string", "description": "Image model to use (default: google/gemini-2.5-flash-image)"}, "aspectRatio": {"type": "string", "description": "Aspect ratio for all images (default: 1:1)"}, "imageSize": {"type": "string", "description": "Image size for all images (default: 1024x1024)"}, "saveDir": {"type": "string", "description": "Directory to save images (default: .supercoder/images/)"}}, "required": ["prompts"]}}},
+    {"type": "function", "function": {"name": "imageListModels", "description": "List all available image generation models with their capabilities and features", "parameters": {"type": "object", "properties": {}, "required": []}}},
+    {"type": "function", "function": {"name": "imageEdit", "description": "Edit an existing image based on a text prompt. Can modify, enhance, or transform images.", "parameters": {"type": "object", "properties": {"imagePath": {"type": "string", "description": "Path to the image to edit"}, "prompt": {"type": "string", "description": "Description of how to edit the image"}, "model": {"type": "string", "description": "Image model to use (default: google/gemini-2.5-flash-image)"}, "savePath": {"type": "string", "description": "Optional path to save edited image"}}, "required": ["imagePath", "prompt"]}}},
+    {"type": "function", "function": {"name": "imageGenerateForProject", "description": "Generate a complete set of images for a specific project type (website, app, logo, banner, icon). Automatically creates appropriate images for the project.", "parameters": {"type": "object", "properties": {"projectType": {"type": "string", "enum": ["website", "app", "logo", "banner", "icon"], "description": "Type of project to generate images for"}, "descriptions": {"type": "array", "items": {"type": "string"}, "description": "Optional custom descriptions for each image"}, "saveDir": {"type": "string", "description": "Directory to save images (default: .supercoder/images/{projectType})"}}, "required": ["projectType"]}}}
 ]
 
 
@@ -1109,6 +1115,137 @@ def execute_tool(tool_call: dict) -> str:
             return json.dumps(vision_tools.vision_compare_screenshots(
                 args["screenshot1Path"],
                 args["screenshot2Path"]
+            ))
+        # PostgreSQL Database Tools
+        elif name == "postgresConnect":
+            from tools import postgres_connect
+            return json.dumps(postgres_connect(
+                args.get("connectionName", "default"),
+                args.get("host", "localhost"),
+                args.get("port", 5432),
+                args.get("database"),
+                args.get("user"),
+                args.get("password"),
+                args.get("connectionString")
+            ))
+        elif name == "postgresDisconnect":
+            from tools import postgres_disconnect
+            return json.dumps(postgres_disconnect(args.get("connectionName", "default")))
+        elif name == "postgresListConnections":
+            from tools import postgres_list_connections
+            return json.dumps(postgres_list_connections())
+        elif name == "postgresQuery":
+            from tools import postgres_query
+            return json.dumps(postgres_query(
+                args["query"],
+                args.get("params"),
+                args.get("connectionName", "default"),
+                args.get("fetchAll", True)
+            ))
+        elif name == "postgresExecute":
+            from tools import postgres_execute
+            return json.dumps(postgres_execute(
+                args["query"],
+                args.get("params"),
+                args.get("connectionName", "default"),
+                args.get("commit", True)
+            ))
+        elif name == "postgresListTables":
+            from tools import postgres_list_tables
+            return json.dumps(postgres_list_tables(
+                args.get("connectionName", "default"),
+                args.get("schema", "public")
+            ))
+        elif name == "postgresDescribeTable":
+            from tools import postgres_describe_table
+            return json.dumps(postgres_describe_table(
+                args["tableName"],
+                args.get("connectionName", "default"),
+                args.get("schema", "public")
+            ))
+        elif name == "postgresInsert":
+            from tools import postgres_insert
+            return json.dumps(postgres_insert(
+                args["tableName"],
+                args["data"],
+                args.get("connectionName", "default"),
+                args.get("schema", "public"),
+                args.get("returning")
+            ))
+        elif name == "postgresUpdate":
+            from tools import postgres_update
+            return json.dumps(postgres_update(
+                args["tableName"],
+                args["data"],
+                args["where"],
+                args.get("whereParams"),
+                args.get("connectionName", "default"),
+                args.get("schema", "public")
+            ))
+        elif name == "postgresDelete":
+            from tools import postgres_delete
+            return json.dumps(postgres_delete(
+                args["tableName"],
+                args["where"],
+                args.get("whereParams"),
+                args.get("connectionName", "default"),
+                args.get("schema", "public")
+            ))
+        elif name == "postgresCountRows":
+            from tools import postgres_count_rows
+            return json.dumps(postgres_count_rows(
+                args["tableName"],
+                args.get("where"),
+                args.get("whereParams"),
+                args.get("connectionName", "default"),
+                args.get("schema", "public")
+            ))
+        elif name == "postgresTransactionBegin":
+            from tools import postgres_transaction_begin
+            return json.dumps(postgres_transaction_begin(args.get("connectionName", "default")))
+        elif name == "postgresTransactionCommit":
+            from tools import postgres_transaction_commit
+            return json.dumps(postgres_transaction_commit(args.get("connectionName", "default")))
+        elif name == "postgresTransactionRollback":
+            from tools import postgres_transaction_rollback
+            return json.dumps(postgres_transaction_rollback(args.get("connectionName", "default")))
+        # Image Generation Tools
+        elif name == "imageGenerate":
+            from tools import image_generate
+            return json.dumps(image_generate(
+                args["prompt"],
+                args.get("model", "google/gemini-2.5-flash-image"),
+                args.get("aspectRatio", "1:1"),
+                args.get("imageSize", "1024x1024"),
+                args.get("savePath"),
+                args.get("numImages", 1)
+            ))
+        elif name == "imageGenerateBatch":
+            from tools import image_generate_batch
+            return json.dumps(image_generate_batch(
+                args["prompts"],
+                args.get("model", "google/gemini-2.5-flash-image"),
+                args.get("aspectRatio", "1:1"),
+                args.get("imageSize", "1024x1024"),
+                args.get("saveDir")
+            ))
+        elif name == "imageListModels":
+            from tools import image_list_models
+            return json.dumps(image_list_models())
+        elif name == "imageEdit":
+            from tools import image_edit
+            return json.dumps(image_edit(
+                args["imagePath"],
+                args["prompt"],
+                args.get("model", "google/gemini-2.5-flash-image"),
+                args.get("savePath")
+            ))
+        elif name == "imageGenerateForProject":
+            from tools import image_generate_for_project
+            return json.dumps(image_generate_for_project(
+                args["projectType"],
+                args.get("descriptions"),
+                args.get("saveDir")
             ))
 
         else:
