@@ -2924,7 +2924,7 @@ def image_generate(
         except Exception as e:
             return {"error": f"Failed to load API key: {e}"}
         
-        # Build request payload
+        # Build request payload - simpler format
         payload = {
             "model": model,
             "messages": [
@@ -2936,37 +2936,65 @@ def image_generate(
             "modalities": ["image", "text"]
         }
         
-        # Add image config for Gemini models
+        # Add image config for Gemini models only
         if "gemini" in model.lower():
-            payload["image_config"] = {
-                "aspect_ratio": aspect_ratio,
-                "image_size": image_size
-            }
+            image_config = {}
+            
+            # Only add aspect_ratio if it's not the default
+            if aspect_ratio and aspect_ratio != "1:1":
+                image_config["aspect_ratio"] = aspect_ratio
+            
+            # Only add image_size if it's not the default
+            if image_size and image_size != "1024x1024":
+                image_config["image_size"] = image_size
+            
+            # Only include image_config if we have settings
+            if image_config:
+                payload["image_config"] = image_config
         
         # Make API request
         response = requests.post(
             "https://openrouter.ai/api/v1/chat/completions",
             headers={
                 "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://github.com/4lpine/Supercoder",
+                "X-Title": "Supercoder"
             },
             json=payload,
             timeout=120
         )
         
-        response.raise_for_status()
+        # Check for errors
+        if response.status_code != 200:
+            error_detail = ""
+            try:
+                error_data = response.json()
+                error_detail = error_data.get("error", {}).get("message", str(error_data))
+            except:
+                error_detail = response.text
+            
+            return {
+                "error": f"API request failed with status {response.status_code}",
+                "detail": error_detail,
+                "model": model,
+                "prompt": prompt
+            }
+        
         result = response.json()
         
         # Extract images from response
         if not result.get("choices"):
-            return {"error": "No response from API"}
+            return {"error": "No response from API", "result": result}
         
         message = result["choices"][0]["message"]
         
         if not message.get("images"):
             return {
                 "error": "No images generated",
-                "response": message.get("content", "")
+                "response": message.get("content", ""),
+                "model": model,
+                "prompt": prompt
             }
         
         # Process and save images
