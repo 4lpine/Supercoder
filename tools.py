@@ -2275,9 +2275,9 @@ def load_context_guide(guide_name: str) -> Dict[str, Any]:
         Guide content and metadata
     """
     try:
-        # Get the Agents directory
-        agents_dir = Path(__file__).parent / "Agents"
-        guide_path = agents_dir / f"{guide_name}.md"
+        # Get the Guides directory
+        guides_dir = Path(__file__).parent / "Guides"
+        guide_path = guides_dir / f"{guide_name}.md"
         
         if not guide_path.exists():
             return {

@@ -83,6 +83,7 @@ _MD_NUMLIST_RE = re.compile(r'^(\s*)(\d+)\.\s')
 
 WORKING_DIR = Path(__file__).parent
 AGENTS_DIR = WORKING_DIR / "Agents"
+GUIDES_DIR = WORKING_DIR / "Guides"
 SUPERCODER_DIR = ".supercoder"
 TASKS_FILE = Path(SUPERCODER_DIR) / "tasks.md"
 
