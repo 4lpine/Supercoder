@@ -1730,10 +1730,10 @@ def run(agent: Agent, state: State) -> None:
                             sys.stdout.write('\r' + ' ' * 60 + '\r')
                             _has_content[0] = True
                         
-                        # Print each character in bright white
-                        for char in chunk:
-                            print(f"{C.WHITE}{char}{C.RST}", end='', flush=True)
-                        _token_count[0] += 1
+                        # Print chunk at once instead of character-by-character
+                        # This allows terminal scrolling to work properly
+                        print(f"{C.WHITE}{chunk}{C.RST}", end='', flush=True)
+                        _token_count[0] += len(chunk) // 4  # Estimate tokens
                 
                 content, tool_calls = agent.PromptWithTools(full_prompt, streaming=True, on_chunk=on_chunk)
                 had_content = bool(content)
