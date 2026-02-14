@@ -129,7 +129,11 @@ def _detect_ps_exe() -> Optional[str]:
 _PS_EXE = _detect_ps_exe()
 
 def _sanitize_cmd(cmd: str) -> str:
-    return _CMD_SEP_RE.sub("; ", str(cmd).strip())
+    raw = str(cmd).strip()
+    if _CMD_SEP_RE.search(raw):
+        import sys
+        print(f"[Warning: Replacing && / || with ; — this runs unconditionally]", file=sys.stderr)
+    return _CMD_SEP_RE.sub("; ", raw)
 
 def _build_shell_command(command: str, interactive: bool = False) -> str:
     if os.name == "nt":
@@ -862,16 +866,45 @@ def file_search(pattern: str, path: str = ".") -> Dict[str, Any]:
     return {"matches": matches[:100]}
 
 def grep_search(pattern: str, path: str = ".") -> Dict[str, Any]:
-    """Search for regex pattern in files"""
-    # Handle non-string pattern
+    """Search for regex pattern in files.
+    Uses ripgrep (rg) when available for speed, falls back to Python walk."""
     if not isinstance(pattern, str):
         pattern = str(pattern)
-    
+
+    # Try ripgrep first — much faster on large repos
+    rg = shutil.which("rg")
+    if rg:
+        try:
+            result = subprocess.run(
+                [rg, "--json", "-m", "100", "--max-filesize", "1M", pattern, path],
+                capture_output=True, text=True, timeout=30
+            )
+            if result.returncode <= 1:  # 0 = matches, 1 = no matches
+                hits = []
+                for line in result.stdout.splitlines():
+                    try:
+                        obj = json.loads(line)
+                        if obj.get("type") == "match":
+                            d = obj["data"]
+                            hits.append({
+                                "file": d["path"]["text"],
+                                "line": d["line_number"],
+                                "text": d["lines"]["text"].strip()[:200]
+                            })
+                            if len(hits) >= 100:
+                                return {"hits": hits, "truncated": True}
+                    except (json.JSONDecodeError, KeyError):
+                        continue
+                return {"hits": hits}
+        except Exception:
+            pass  # fall through to Python implementation
+
+    # Python fallback
     try:
         regex = re.compile(pattern)
     except re.error as e:
         return {"error": f"Invalid regex: {e}"}
-    
+
     hits = []
     for root, dirs, files in os.walk(path):
         dirs[:] = [d for d in dirs if d not in {'.git', '__pycache__', 'node_modules', '.venv', 'venv'}]
@@ -2207,22 +2240,24 @@ def resolve_merge_conflict(path: str, strategy: str = "ours") -> Dict[str, Any]:
         
         lines = content.split('\n')
         resolved_lines = []
-        in_conflict = False
-        conflict_start = None
+        in_ours = False
+        in_theirs = False
         ours_lines = []
         theirs_lines = []
+        conflicts_resolved = 0
         
-        for i, line in enumerate(lines):
+        for line in lines:
             if line.startswith('<<<<<<<'):
-                in_conflict = True
-                conflict_start = i
+                in_ours = True
+                in_theirs = False
                 ours_lines = []
                 theirs_lines = []
-            elif line.startswith('=======') and in_conflict:
+            elif line.startswith('=======') and in_ours:
                 # Switch from ours to theirs
-                pass
-            elif line.startswith('>>>>>>>') and in_conflict:
-                # End of conflict
+                in_ours = False
+                in_theirs = True
+            elif line.startswith('>>>>>>>') and in_theirs:
+                # End of conflict — apply strategy
                 if strategy == "ours":
                     resolved_lines.extend(ours_lines)
                 elif strategy == "theirs":
@@ -2231,15 +2266,13 @@ def resolve_merge_conflict(path: str, strategy: str = "ours") -> Dict[str, Any]:
                     resolved_lines.extend(ours_lines)
                     resolved_lines.append("# --- merged ---")
                     resolved_lines.extend(theirs_lines)
-                
-                in_conflict = False
-            elif in_conflict:
-                if conflict_start is not None and '=======' not in line:
-                    if not any(line.startswith(m) for m in ['<<<<<<<', '=======']):
-                        if len(theirs_lines) == 0 or '=======' in '\n'.join(lines[conflict_start:i]):
-                            theirs_lines.append(line)
-                        else:
-                            ours_lines.append(line)
+                in_ours = False
+                in_theirs = False
+                conflicts_resolved += 1
+            elif in_ours:
+                ours_lines.append(line)
+            elif in_theirs:
+                theirs_lines.append(line)
             else:
                 resolved_lines.append(line)
         
@@ -2249,7 +2282,8 @@ def resolve_merge_conflict(path: str, strategy: str = "ours") -> Dict[str, Any]:
         return {
             "path": path,
             "strategy": strategy,
-            "message": "Merge conflicts resolved",
+            "conflicts_resolved": conflicts_resolved,
+            "message": f"Resolved {conflicts_resolved} merge conflict(s)",
             "note": "Please review the changes carefully"
         }
     
@@ -2649,38 +2683,56 @@ def postgres_insert(
     if not data:
         return {"error": "No data provided"}
     
+    if connection_name not in _postgres_connections:
+        return {"error": f"Connection '{connection_name}' not found. Use postgres_connect first."}
+    
+    try:
+        from psycopg2 import sql as psql
+    except ImportError:
+        return {"error": "psycopg2 not installed. Install with: pip install psycopg2-binary"}
+    
     columns = list(data.keys())
     values = list(data.values())
-    placeholders = ["%s"] * len(values)
     
-    query = f"""
-        INSERT INTO {schema}.{table_name} ({', '.join(columns)})
-        VALUES ({', '.join(placeholders)})
-    """
-    
-    if returning:
-        query += f" RETURNING {returning}"
+    query = psql.SQL("INSERT INTO {schema}.{table} ({columns}) VALUES ({placeholders})").format(
+        schema=psql.Identifier(schema),
+        table=psql.Identifier(table_name),
+        columns=psql.SQL(', ').join(psql.Identifier(c) for c in columns),
+        placeholders=psql.SQL(', ').join(psql.Placeholder() for _ in values),
+    )
     
     if returning:
-        result = postgres_query(query, params=values, connection_name=connection_name, fetch_all=False)
-        if "error" in result:
-            return result
-        return {
-            "status": "success",
-            "table": table_name,
-            "inserted": data,
-            "returned": result["rows"][0] if result["rows"] else None
-        }
-    else:
-        result = postgres_execute(query, params=values, connection_name=connection_name)
-        if "error" in result:
-            return result
-        return {
-            "status": "success",
-            "table": table_name,
-            "inserted": data,
-            "affected_rows": result["affected_rows"]
-        }
+        query = query + psql.SQL(" RETURNING {ret}").format(ret=psql.Identifier(returning))
+    
+    conn = _postgres_connections[connection_name]
+    try:
+        cursor = conn.cursor()
+        cursor.execute(query, values)
+        
+        if returning:
+            row = cursor.fetchone()
+            col_names = [desc[0] for desc in cursor.description] if cursor.description else []
+            conn.commit()
+            cursor.close()
+            return {
+                "status": "success",
+                "table": table_name,
+                "inserted": data,
+                "returned": dict(zip(col_names, row)) if row else None
+            }
+        else:
+            affected = cursor.rowcount
+            conn.commit()
+            cursor.close()
+            return {
+                "status": "success",
+                "table": table_name,
+                "inserted": data,
+                "affected_rows": affected
+            }
+    except Exception as e:
+        conn.rollback()
+        return {"error": f"Insert failed: {str(e)}"}
 
 
 def postgres_update(
@@ -2708,30 +2760,50 @@ def postgres_update(
     if not data:
         return {"error": "No data provided"}
     
-    set_clauses = [f"{col} = %s" for col in data.keys()]
+    if connection_name not in _postgres_connections:
+        return {"error": f"Connection '{connection_name}' not found. Use postgres_connect first."}
+    
+    try:
+        from psycopg2 import sql as psql
+    except ImportError:
+        return {"error": "psycopg2 not installed. Install with: pip install psycopg2-binary"}
+    
+    columns = list(data.keys())
     values = list(data.values())
+    
+    # Build SET clause with safe identifiers
+    set_clause = psql.SQL(', ').join(
+        psql.SQL("{col} = {ph}").format(col=psql.Identifier(c), ph=psql.Placeholder())
+        for c in columns
+    )
+    
+    # WHERE clause uses user-provided string with parameterized values (safe)
+    query = psql.SQL("UPDATE {schema}.{table} SET {set_clause} WHERE ").format(
+        schema=psql.Identifier(schema),
+        table=psql.Identifier(table_name),
+        set_clause=set_clause,
+    ) + psql.SQL(where)
     
     if where_params:
         values.extend(where_params)
     
-    query = f"""
-        UPDATE {schema}.{table_name}
-        SET {', '.join(set_clauses)}
-        WHERE {where}
-    """
-    
-    result = postgres_execute(query, params=values, connection_name=connection_name)
-    
-    if "error" in result:
-        return result
-    
-    return {
-        "status": "success",
-        "table": table_name,
-        "updated": data,
-        "where": where,
-        "affected_rows": result["affected_rows"]
-    }
+    conn = _postgres_connections[connection_name]
+    try:
+        cursor = conn.cursor()
+        cursor.execute(query, values)
+        affected = cursor.rowcount
+        conn.commit()
+        cursor.close()
+        return {
+            "status": "success",
+            "table": table_name,
+            "updated": data,
+            "where": where,
+            "affected_rows": affected
+        }
+    except Exception as e:
+        conn.rollback()
+        return {"error": f"Update failed: {str(e)}"}
 
 
 def postgres_delete(
@@ -2754,22 +2826,35 @@ def postgres_delete(
     Returns:
         Delete status and affected row count
     """
-    query = f"""
-        DELETE FROM {schema}.{table_name}
-        WHERE {where}
-    """
+    if connection_name not in _postgres_connections:
+        return {"error": f"Connection '{connection_name}' not found. Use postgres_connect first."}
     
-    result = postgres_execute(query, params=where_params, connection_name=connection_name)
+    try:
+        from psycopg2 import sql as psql
+    except ImportError:
+        return {"error": "psycopg2 not installed. Install with: pip install psycopg2-binary"}
     
-    if "error" in result:
-        return result
+    query = psql.SQL("DELETE FROM {schema}.{table} WHERE ").format(
+        schema=psql.Identifier(schema),
+        table=psql.Identifier(table_name),
+    ) + psql.SQL(where)
     
-    return {
-        "status": "success",
-        "table": table_name,
-        "where": where,
-        "affected_rows": result["affected_rows"]
-    }
+    conn = _postgres_connections[connection_name]
+    try:
+        cursor = conn.cursor()
+        cursor.execute(query, where_params)
+        affected = cursor.rowcount
+        conn.commit()
+        cursor.close()
+        return {
+            "status": "success",
+            "table": table_name,
+            "where": where,
+            "affected_rows": affected
+        }
+    except Exception as e:
+        conn.rollback()
+        return {"error": f"Delete failed: {str(e)}"}
 
 
 def postgres_transaction_begin(connection_name: str = "default") -> Dict[str, Any]:
@@ -2865,28 +2950,51 @@ def postgres_count_rows(
     Returns:
         Row count
     """
-    query = f"SELECT COUNT(*) as count FROM {schema}.{table_name}"
+    if connection_name not in _postgres_connections:
+        return {"error": f"Connection '{connection_name}' not found. Use postgres_connect first."}
+    
+    try:
+        from psycopg2 import sql as psql
+    except ImportError:
+        return {"error": "psycopg2 not installed. Install with: pip install psycopg2-binary"}
+    
+    query = psql.SQL("SELECT COUNT(*) as count FROM {schema}.{table}").format(
+        schema=psql.Identifier(schema),
+        table=psql.Identifier(table_name),
+    )
     
     if where:
-        query += f" WHERE {where}"
+        query = query + psql.SQL(" WHERE ") + psql.SQL(where)
     
-    result = postgres_query(query, params=where_params, connection_name=connection_name, fetch_all=False)
-    
-    if "error" in result:
-        return result
-    
-    count = result["rows"][0]["count"] if result["rows"] else 0
-    
-    return {
-        "table": table_name,
-        "count": count,
-        "where": where
-    }
+    conn = _postgres_connections[connection_name]
+    try:
+        cursor = conn.cursor()
+        cursor.execute(query, where_params)
+        row = cursor.fetchone()
+        cursor.close()
+        count = row[0] if row else 0
+        return {
+            "table": table_name,
+            "count": count,
+            "where": where
+        }
+    except Exception as e:
+        return {"error": f"Count failed: {str(e)}"}
 
 
 # ==============================================================================
 # Image Generation (OpenRouter)
 # ==============================================================================
+
+def _get_api_key() -> Optional[str]:
+    """Get OpenRouter API key without circular import risk."""
+    try:
+        from Agentic import TokenManager
+        TokenManager.load_tokens()
+        return TokenManager.get_token()
+    except Exception:
+        return None
+
 
 def image_generate(
     prompt: str,
@@ -2913,13 +3021,10 @@ def image_generate(
         import base64
         from datetime import datetime
         
-        # Get API key
-        try:
-            from Agentic import TokenManager
-            TokenManager.load_tokens()
-            api_key = TokenManager.get_token()
-        except Exception as e:
-            return {"error": f"Failed to load API key: {e}"}
+        # Get API key via shared helper (avoids circular import risk)
+        api_key = _get_api_key()
+        if not api_key:
+            return {"error": "Failed to load API key. Use 'tokens' command to add your OpenRouter API key."}
         
         # Build request payload - let the model decide aspect ratio and size
         payload = {
@@ -3187,13 +3292,10 @@ def image_edit(
         }
         mime_type = mime_types.get(ext, 'image/png')
         
-        # Get API key
-        try:
-            from Agentic import TokenManager
-            TokenManager.load_tokens()
-            api_key = TokenManager.get_token()
-        except Exception as e:
-            return {"error": f"Failed to load API key: {e}"}
+        # Get API key via shared helper (avoids circular import risk)
+        api_key = _get_api_key()
+        if not api_key:
+            return {"error": "Failed to load API key. Use 'tokens' command to add your OpenRouter API key."}
         
         # Build request with image input
         payload = {

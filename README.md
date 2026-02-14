@@ -1,10 +1,8 @@
-# Supercoder
+# SuperCoder
 
 **The FIRST AI coding assistant with visual UI analysis** 🚀
 
 An autonomous AI coding agent that runs in your terminal. Give it a task, and it writes code, creates files, runs commands, and builds entire projects — all on its own.
-
-**NEW:** Supercoder can now control browsers and "see" UIs like a human! Debug visual bugs, check accessibility, and perform visual regression testing automatically.
 
 ```
       ██████  █    ██  ██▓███  ▓█████  ██▀███   ▄████▄   ▒█████  ▓█████▄ ▓█████  ██▀███
@@ -25,13 +23,13 @@ An autonomous AI coding agent that runs in your terminal. Give it a task, and it
 
 ```bash
 # Clone the repository
-git clone https://github.com/4lpine/Supercoder.git
+git clone https://github.com/yourusername/Supercoder.git
 cd Supercoder
 
 # Install dependencies
 pip install -r requirements.txt
 
-# Run Supercoder
+# Run SuperCoder
 python main.py
 ```
 
@@ -40,7 +38,7 @@ Then just tell it what to build:
 create a REST API with Express that has user authentication
 ```
 
-Supercoder will autonomously:
+SuperCoder will autonomously:
 1. Create project structure
 2. Write all necessary files
 3. Install dependencies
@@ -49,13 +47,13 @@ Supercoder will autonomously:
 
 ---
 
-## 🌟 What Makes Supercoder Unique
+## 🌟 What Makes SuperCoder Unique
 
-Supercoder is the **ONLY** AI coding assistant with browser automation and visual UI analysis.
+SuperCoder is the **ONLY** AI coding assistant with browser automation and visual UI analysis.
 
-### Unique Features (ONLY in Supercoder)
+### Unique Features (ONLY in SuperCoder)
 
-| Feature | Supercoder | All Competitors |
+| Feature | SuperCoder | All Competitors |
 |---------|------------|-----------------|
 | **Browser Automation** | ✅ **11 tools** | ❌ None |
 | **Visual UI Analysis** | ✅ **7 tools** | ❌ None |
@@ -63,10 +61,7 @@ Supercoder is the **ONLY** AI coding assistant with browser automation and visua
 | **Accessibility Checking** | ✅ | ❌ |
 | **Visual Regression Testing** | ✅ | ❌ |
 | **Local Vision Models** | ✅ **Free** | ❌ |
-| **File Pinning** | ✅ | ❌ |
-| **Undo System** | ✅ | ❌ |
-| **Auto-Verification** | ✅ | ❌ |
-| **Task Planning** | ✅ | ❌ |
+| **PostgreSQL Integration** | ✅ **15+ tools** | ❌ |
 | **350+ Models** | ✅ | ❌ |
 | **Completely Free Tier** | ✅ | ❌ |
 
@@ -76,7 +71,7 @@ Supercoder is the **ONLY** AI coding assistant with browser automation and visua
 ```
 User: "The login page looks broken at localhost:3000"
 
-Supercoder:
+SuperCoder:
 → Opens browser
 → Takes screenshot
 → Vision analysis: "Login button overlapping username field"
@@ -89,7 +84,7 @@ Supercoder:
 ```
 User: "Check accessibility of the homepage"
 
-Supercoder:
+SuperCoder:
 → Takes screenshot
 → Analyzes: "Low contrast text (2.1:1, needs 4.5:1)"
 → Identifies: "Missing label on email input"
@@ -97,15 +92,16 @@ Supercoder:
 → Fixes issues automatically
 ```
 
-**Visual Regression Testing:**
+**Build Complete Web Apps:**
 ```
-User: "Did my CSS changes break anything?"
+User: "Build me a chat app"
 
-Supercoder:
-→ Takes before/after screenshots
-→ Compares visually
-→ Reports: "Button color changed, text spacing increased"
-→ Asks if changes are intentional
+SuperCoder:
+→ Designs database schema
+→ Creates Next.js + Supabase project
+→ Implements auth, channels, real-time messaging
+→ Tests with Selenium + Vision
+→ Reports: "Complete chat app ready at localhost:3000"
 ```
 
 ---
@@ -198,12 +194,10 @@ Supercoder:
 - File downloads from URLs
 
 ### 🗄️ Database Integration
-- Supabase support (query, insert, update, delete)
-- Table listing and schema inspection
-- Row counting with filters
-- PostgreSQL support (15+ tools)
-- Direct database connections
+- **PostgreSQL** - 15+ specialized tools for direct database operations
+- **Supabase** - Full CLI integration for auth, database, storage, real-time
 - Transaction management
+- Schema inspection
 - Parameterized queries for security
 - Multiple connection support
 
@@ -213,7 +207,7 @@ Supercoder:
 
 ### Quick Install (Windows)
 
-1. Download [`installer.bat`](https://github.com/4lpine/Supercoder/raw/main/bin/installer.bat)
+1. Download [`installer.bat`](https://github.com/yourusername/Supercoder/raw/main/bin/installer.bat)
 2. Run it
 3. Open a new terminal and type: `supercoder`
 
@@ -221,7 +215,7 @@ Supercoder:
 
 ```bash
 # Clone the repository
-git clone https://github.com/4lpine/Supercoder.git
+git clone https://github.com/yourusername/Supercoder.git
 cd Supercoder
 
 # Install dependencies
@@ -236,7 +230,7 @@ pip install torch transformers qwen-vl-utils accelerate
 # For GPU support (recommended for vision):
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
 
-# Run Supercoder
+# Run SuperCoder
 python main.py
 ```
 
@@ -259,7 +253,7 @@ python main.py
 | `models` | List 350+ available models |
 | `tokens` | Add/manage API keys |
 | `clear` | Clear conversation history |
-| `quit` | Exit Supercoder |
+| `quit` | Exit SuperCoder |
 
 ### Browser & Vision Commands
 
@@ -348,7 +342,7 @@ vision local 32b     # 32GB+ VRAM - best quality
 ```
 plan create a todo app with React frontend and FastAPI backend
 
-# Supercoder generates:
+# SuperCoder generates:
 # - Requirements document
 # - Technical design
 # - Task breakdown
@@ -363,7 +357,7 @@ task next    # Execute second task
 ```
 The login page at localhost:3000 looks broken
 
-# Supercoder:
+# SuperCoder:
 # 1. Opens browser
 # 2. Takes screenshot
 # 3. Analyzes: "Button overlapping input field"
@@ -377,7 +371,7 @@ The login page at localhost:3000 looks broken
 ```
 add JWT authentication to the user API
 
-# Supercoder:
+# SuperCoder:
 # 1. Reads existing code
 # 2. Installs dependencies
 # 3. Adds auth middleware
@@ -391,7 +385,7 @@ add JWT authentication to the user API
 ```
 check accessibility of all pages in my app
 
-# Supercoder:
+# SuperCoder:
 # 1. Opens each page
 # 2. Takes screenshots
 # 3. Analyzes contrast, labels, text size
@@ -406,7 +400,7 @@ check accessibility of all pages in my app
 
 ### API Keys
 
-Supercoder works with OpenRouter for AI models:
+SuperCoder works with OpenRouter for AI models:
 
 1. Get a key from [openrouter.ai](https://openrouter.ai)
 2. Run `tokens` command
@@ -416,7 +410,7 @@ Keys are saved globally in `~/.supercoder/tokens.txt`
 
 ### Free Models
 
-Supercoder works without an API key using free models:
+SuperCoder works without an API key using free models:
 - `qwen/qwen3-coder:free` (default)
 - `mistralai/devstral-2512:free`
 
@@ -437,7 +431,7 @@ Project-specific files are stored in `.supercoder/`:
 │                     Your Machine                            │
 │                                                             │
 │  ┌─────────────────────────────────────────────────────┐    │
-│  │              Supercoder (Python)                    │    │
+│  │              SuperCoder (Python)                    │    │
 │  │                                                     │    │
 │  │  • main.py (UI & orchestration)                     │    │
 │  │  • Agentic.py (AI interface)                        │    │
@@ -489,11 +483,10 @@ Built with:
 
 ## 🔗 Links
 
-- **Website:** [cerebrix.dev](https://cerebrix.dev)
-- **GitHub:** [github.com/4lpine/Supercoder](https://github.com/4lpine/Supercoder)
-- **Issues:** [github.com/4lpine/Supercoder/issues](https://github.com/4lpine/Supercoder/issues)
+- **GitHub:** [github.com/yourusername/Supercoder](https://github.com/yourusername/Supercoder)
+- **Issues:** [github.com/yourusername/Supercoder/issues](https://github.com/yourusername/Supercoder/issues)
 - **Discord:** [discord.gg/GyS225bRJx](https://discord.gg/GyS225bRJx)
 
 ---
 
-**Supercoder: The future of AI-assisted development is here.** 🚀
+**SuperCoder: The future of AI-assisted development is here.** 🚀

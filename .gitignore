@@ -11,6 +11,7 @@ build/
 .kiro/
 .vscode/
 .idea/
+.claude/
 *.log
 .DS_Store
 Thumbs.db
@@ -18,3 +19,5 @@ test_*.py
 *_test.py
 tokens.txt
 .Information/tokens.txt
+.supercoder/
+*.bak

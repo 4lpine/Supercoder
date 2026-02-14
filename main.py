@@ -11,7 +11,6 @@ import re
 import shutil
 import subprocess
 import time
-import threading
 import requests
 import concurrent.futures
 from dataclasses import dataclass, field
@@ -47,7 +46,10 @@ def fix_double_encoding(text: str) -> str:
     return text
 
 import tools
-from Agentic import Agent, execute_tool, MODEL_LIMITS, TokenManager
+from Agentic import Agent, execute_tool, MODEL_LIMITS, TokenManager, NATIVE_TOOLS
+import Agentic as _agentic_module
+from memory import get_memory, EpisodicMemory
+from maml import get_meta_learner, MetaLearner
 
 # Syntax highlighting
 try:
@@ -68,14 +70,6 @@ _WHITESPACE_RE = re.compile(r'\s+')
 _CMD_SEP_RE = re.compile(r'\s*(?:&&|\|\|)\s*|\s&\s')
 _TASK_RE = re.compile(r'^(\s*[-*]?\s*\[([xX ])\]\s*)(.+)$', re.MULTILINE)
 _ANSI_TOKEN_RE = re.compile(r'(\x1b\[[0-9;]*m)')
-_CODE_BLOCK_RE = re.compile(r'```(\w+)?\n(.*?)```', re.DOTALL)
-
-# Markdown patterns
-_MD_BOLD_RE = re.compile(r'\*\*(.+?)\*\*')
-_MD_ITALIC1_RE = re.compile(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)')
-_MD_ITALIC2_RE = re.compile(r'_(.+?)_')
-_MD_CODE_RE = re.compile(r'`(.+?)`')
-_MD_NUMLIST_RE = re.compile(r'^(\s*)(\d+)\.\s')
 
 # ==============================================================================
 # Constants
@@ -299,6 +293,7 @@ def _shell_stream(event: str, text: Any = None) -> None:
 tools.set_stream_handler(_shell_stream)
 
 def header() -> None:
+    os.system("cls")
     from colorama import Fore
     print()
     Color1 = Fore.MAGENTA
@@ -317,7 +312,6 @@ def header() -> None:
     {Fore.RESET}
     """
     print(Banner)
-    # Show commands
     print(_s("  Commands:", C.BOLD))
     cmds = [
         ("auto", "Toggle autonomous mode (auto on|off) or set cap (auto cap N)"),
@@ -328,6 +322,7 @@ def header() -> None:
         ("index", "Rebuild retrieval index"),
         ("model", "Show or switch model"),
         ("models", "List available OpenRouter models"),
+        ("ollama", "Use local Ollama model (ollama <model>) or switch back (ollama off)"),
         ("pin", "Pin a file to always include in context"),
         ("pins", "List pinned files"),
         ("plan", "Generate requirements, design, and tasks for a project"),
@@ -405,19 +400,28 @@ def _build_prompt() -> str:
     user = getpass.getuser()
     cwd = Path.cwd().name or "~"
     
-    # Try to get balance (cached for performance)
+    # Check if using local LLM
+    agent = _agentic_module._current_agent
+    is_local = agent and agent.is_local
+    
+    # Try to get balance (cached for performance) - skip for local models
     balance_str = ""
-    if not hasattr(_build_prompt, '_balance_cache'):
-        _build_prompt._balance_cache = {'balance': None, 'timestamp': 0}
-    
-    # Refresh balance every 60 seconds
-    current_time = time.time()
-    if current_time - _build_prompt._balance_cache['timestamp'] > 60:
-        balance = _get_openrouter_balance()
-        _build_prompt._balance_cache = {'balance': balance, 'timestamp': current_time}
-    
-    if _build_prompt._balance_cache['balance']:
-        balance_str = f"-[{C.BYELLOW}{_build_prompt._balance_cache['balance']}{C.BPURPLE}]"
+    if not is_local:
+        if not hasattr(_build_prompt, '_balance_cache'):
+            _build_prompt._balance_cache = {'balance': None, 'timestamp': 0}
+        
+        # Refresh balance every 60 seconds
+        current_time = time.time()
+        if current_time - _build_prompt._balance_cache['timestamp'] > 60:
+            balance = _get_openrouter_balance()
+            _build_prompt._balance_cache = {'balance': balance, 'timestamp': current_time}
+        
+        if _build_prompt._balance_cache['balance']:
+            balance_str = f"-[{C.BYELLOW}{_build_prompt._balance_cache['balance']}{C.BPURPLE}]"
+    else:
+        # Show local model indicator
+        model_short = agent.model.split("/")[-1].split(":")[0] if agent else "local"
+        balance_str = f"-[{C.BGREEN}⚡local:{model_short}{C.BPURPLE}]"
     
     line1 = f"{C.BPURPLE}┌──({C.BRED}{user}{C.BPURPLE}@{C.BRED}supercoder{C.BPURPLE})-[{C.BOLD}{C.WHITE}{cwd}{C.RST}{C.BPURPLE}]{balance_str}{C.RST}"
     line2 = f"{C.BPURPLE}└─{C.BRED}${C.RST} "
@@ -425,6 +429,10 @@ def _build_prompt() -> str:
 
 def get_input(prompt: str = None) -> str:
     try:
+        # Clear any lingering animation before showing prompt
+        sys.stdout.write('\r' + ' ' * 80 + '\r')
+        sys.stdout.flush()
+        
         if prompt is None:
             prompt = _build_prompt()
             print(prompt, end="")
@@ -514,7 +522,7 @@ class State:
     auto_cap: int = 10000
     auto_steps: int = 0
     compact: bool = False
-    verbose: bool = False
+    verbose: bool = True
     verify_mode: str = "py_compile"
     verify_cmd: Optional[str] = None
     verify_summary: str = ""
@@ -688,41 +696,54 @@ def print_tool(name: str, args: Dict[str, Any], result: str, compact: bool = Tru
         # Full verbose output with nice formatting (rounded corners)
         print(f"  {C.PURPLE}╭{'─' * 70}{C.RST}")
         
-        # Show full arguments for write operations
+        # Show full arguments for ALL operations
+        print(f"  {C.PURPLE}│{C.RST} {C.BYELLOW}TOOL:{C.RST} {name}")
+        print(f"  {C.PURPLE}│{C.RST} {C.BYELLOW}ARGUMENTS:{C.RST}")
+        for key, value in args.items():
+            value_str = _to_str(value, join_lists=True)
+            if len(value_str) > 100:
+                print(f"  {C.PURPLE}│{C.RST}   {C.CYAN}{key}:{C.RST} {value_str[:100]}... ({len(value_str)} chars)")
+            else:
+                print(f"  {C.PURPLE}│{C.RST}   {C.CYAN}{key}:{C.RST} {value_str}")
+        print(f"  {C.PURPLE}├{'─' * 70}{C.RST}")
+        
+        # Show full content for write operations
         if name in ("fsWrite", "fsAppend"):
             content = _to_str(args.get("text", args.get("content", "")), join_lists=True)
             path = args.get("path", "")
-            print(f"  {C.PURPLE}│{C.RST} {C.BYELLOW}FILE:{C.RST} {path}")
-            print(f"  {C.PURPLE}│{C.RST} {C.BYELLOW}CONTENT ({len(content)} chars):{C.RST}")
+            print(f"  {C.PURPLE}│{C.RST} {C.BYELLOW}FILE CONTENT ({len(content)} chars):{C.RST}")
             print(f"  {C.PURPLE}├{'─' * 70}{C.RST}")
             _print_highlighted_lines(content, path)
             print(f"  {C.PURPLE}├{'─' * 70}{C.RST}")
         
         elif name == "strReplace":
             path = args.get("path", "")
-            old = _to_str(args.get("oldStr", ""), join_lists=True)
-            new = _to_str(args.get("newStr", ""), join_lists=True)
-            print(f"  {C.PURPLE}│{C.RST} {C.BYELLOW}FILE:{C.RST} {path}")
-            print(f"  {C.PURPLE}│{C.RST} {C.RED}OLD ({len(old)} chars):{C.RST}")
+            old = _to_str(args.get("old", args.get("oldStr", "")), join_lists=True)
+            new = _to_str(args.get("new", args.get("newStr", "")), join_lists=True)
+            print(f"  {C.PURPLE}│{C.RST} {C.RED}OLD CONTENT ({len(old)} chars):{C.RST}")
             print(f"  {C.PURPLE}├{'─' * 70}{C.RST}")
             _print_highlighted_lines(old, path, prefix=f"{C.RED}-{C.RST} ", line_nums=False)
             print(f"  {C.PURPLE}├{'─' * 70}{C.RST}")
-            print(f"  {C.PURPLE}│{C.RST} {C.GREEN}NEW ({len(new)} chars):{C.RST}")
+            print(f"  {C.PURPLE}│{C.RST} {C.GREEN}NEW CONTENT ({len(new)} chars):{C.RST}")
             print(f"  {C.PURPLE}├{'─' * 70}{C.RST}")
             _print_highlighted_lines(new, path, prefix=f"{C.GREEN}+{C.RST} ", line_nums=False)
             print(f"  {C.PURPLE}├{'─' * 70}{C.RST}")
         
         elif name in ("readFile", "readCode", "readMultipleFiles"):
             path = args.get("path", args.get("paths", [""])[0] if args.get("paths") else "")
-            print(f"  {C.PURPLE}│{C.RST} {C.BYELLOW}CONTENT:{C.RST}")
+            print(f"  {C.PURPLE}│{C.RST} {C.BYELLOW}FILE CONTENT:{C.RST}")
             print(f"  {C.PURPLE}├{'─' * 70}{C.RST}")
             _print_highlighted_lines(result, path)
             print(f"  {C.PURPLE}├{'─' * 70}{C.RST}")
         
-        else:
-            # Generic verbose output
-            if result:
-                print(f"  {C.PURPLE}│{C.RST} {C.BYELLOW}RESULT:{C.RST}")
+        # Always show result for all tools
+        if result:
+            print(f"  {C.PURPLE}│{C.RST} {C.BYELLOW}RESULT:{C.RST}")
+            # For very long results, show with syntax highlighting if it looks like code
+            if len(result) > 500 and name in ("readFile", "readCode", "readMultipleFiles", "executePwsh", "grepSearch"):
+                for line in result.split('\n'):
+                    print(f"  {C.PURPLE}│{C.RST} {line}")
+            else:
                 for line in result.split('\n'):
                     print(f"  {C.PURPLE}│{C.RST} {line}")
         
@@ -745,229 +766,12 @@ def print_tool(name: str, args: Dict[str, Any], result: str, compact: bool = Tru
             if len(display.split('\n')) > 15:
                 print(f"    {C.GRAY}... ({len(display.split(chr(10))) - 15} more lines){C.RST}")
 
-import textwrap
-
-def repair_utf8_mojibake(s: str) -> str:
-    # Detect the typical pattern: 'â' + C1 control chars
-    if "â" in s and any(0x80 <= ord(ch) <= 0x9F for ch in s):
-        try:
-            return s.encode("latin1").decode("utf-8")
-        except UnicodeError:
-            pass
-    return s
-
-def _wrap_preserve_structure(text: str, width: int) -> list[str]:
-    """
-    Preserve:
-      - existing newlines
-      - indentation (leading spaces)
-      - multiple spaces inside lines
-      - tabs (expanded to spaces)
-    While still wrapping long lines to `width`.
-    """
-    out: list[str] = []
-    raw_lines = text.splitlines() or [""]
-
-    for raw in raw_lines:
-        raw = raw.expandtabs(4)  # keep tab structure predictable
-
-        # keep blank lines
-        if raw == "":
-            out.append("")
-            continue
-
-        indent_len = len(raw) - len(raw.lstrip(" "))
-        indent = raw[:indent_len]
-        body = raw[indent_len:]
-
-        wrapped = textwrap.wrap(
-            body,
-            width=max(1, width - indent_len),
-            replace_whitespace=False,  # DON'T collapse spaces
-            drop_whitespace=False,     # DON'T trim spaces
-            break_long_words=True,
-            break_on_hyphens=False,
-        ) or [""]
-
-        out.extend(indent + w for w in wrapped)
-
-    return out
-
 
 def _print_completion_box(summary: str, success: bool = True) -> None:
-    """Print a nice completion box with the summary (with markdown rendering and syntax highlighting)."""
-    import sys
-    import re
-    
-    # Fix double-encoding if present
-    if isinstance(summary, str):
-        try:
-            if 'Ã' in summary or 'Â' in summary:
-                summary = summary.encode('latin-1').decode('utf-8')
-        except (UnicodeDecodeError, UnicodeEncodeError):
-            pass
-    
     icon = "✓" if success else "x"
     color = C.GREEN if success else C.RED
-    border_color = C.BPURPLE
-
-    total_width = 70          # number of ─ across
-    content_width = total_width - 2  # inside box (excluding the two borders)
-
-    def render_markdown_line(line: str) -> str:
-        """Render markdown formatting in a line."""
-        # Headers
-        if line.startswith('# '):
-            return f"{C.BOLD}{C.BRED}{line[2:]}{C.RST}"
-        elif line.startswith('## '):
-            return f"{C.BOLD}{C.BPURPLE}{line[3:]}{C.RST}"
-        elif line.startswith('### '):
-            return f"{C.BOLD}{C.BYELLOW}{line[4:]}{C.RST}"
-        
-        # Bold **text**
-        line = _MD_BOLD_RE.sub(rf'{C.BOLD}\1{C.RST}', line)
-        
-        # Italic *text* or _text_
-        line = _MD_ITALIC1_RE.sub(rf'{C.DIM}\1{C.RST}', line)
-        line = _MD_ITALIC2_RE.sub(rf'{C.DIM}\1{C.RST}', line)
-        
-        # Inline code `code`
-        line = _MD_CODE_RE.sub(rf'{C.BYELLOW}\1{C.RST}', line)
-        
-        # Bullets and checkmarks
-        if line.lstrip().startswith('- '):
-            indent = len(line) - len(line.lstrip())
-            line = ' ' * indent + f'{C.BPURPLE}•{C.RST} ' + line.lstrip()[2:]
-        elif line.lstrip().startswith('* '):
-            indent = len(line) - len(line.lstrip())
-            line = ' ' * indent + f'{C.BPURPLE}•{C.RST} ' + line.lstrip()[2:]
-        elif line.lstrip().startswith('✓ '):
-            indent = len(line) - len(line.lstrip())
-            line = ' ' * indent + f'{C.GREEN}✓{C.RST} ' + line.lstrip()[2:]
-        elif line.lstrip().startswith('✗ '):
-            indent = len(line) - len(line.lstrip())
-            line = ' ' * indent + f'{C.RED}✗{C.RST} ' + line.lstrip()[2:]
-        
-        # Numbered lists
-        line = _MD_NUMLIST_RE.sub(rf'\1{C.BPURPLE}\2.{C.RST} ', line)
-        
-        return line
-    
-    def wrap_with_ansi(text: str, width: int) -> list[str]:
-        """Wrap text while preserving ANSI codes."""
-        # Calculate visible length (without ANSI codes)
-        visible = _ANSI_RE.sub('', text)
-        if len(visible) <= width:
-            return [text]
-        
-        # Need to wrap - do it on visible text then map back to original
-        lines = []
-        current_line = ""
-        current_visible = ""
-        
-        # Split into tokens (ANSI codes and regular text)
-        tokens = _ANSI_TOKEN_RE.split(text)
-        
-        for token in tokens:
-            if _ANSI_TOKEN_RE.match(token):
-                # ANSI code - add without counting length
-                current_line += token
-            else:
-                # Regular text - need to check length
-                for char in token:
-                    if len(current_visible) >= width:
-                        lines.append(current_line)
-                        current_line = ""
-                        current_visible = ""
-                    current_line += char
-                    current_visible += char
-        
-        if current_line:
-            lines.append(current_line)
-        
-        return lines if lines else [""]
-    
-    # Parse markdown code blocks for syntax highlighting
-    
-    def process_text(text: str) -> list[str]:
-        """Process text, applying syntax highlighting to code blocks and markdown to regular text."""
-        result_lines = []
-        last_end = 0
-        
-        for match in _CODE_BLOCK_RE.finditer(text):
-            # Add text before code block (with markdown rendering)
-            before = text[last_end:match.start()]
-            if before:
-                for line in before.split('\n'):
-                    rendered = render_markdown_line(line)
-                    # Wrap if needed
-                    wrapped = wrap_with_ansi(rendered, content_width)
-                    result_lines.extend(wrapped)
-            
-            # Process code block
-            lang = match.group(1) or ""
-            code = match.group(2).rstrip('\n')
-            
-            # Add code block header
-            result_lines.append(f"{C.GRAY}┌─ {lang or 'code'} ─{C.RST}")
-            
-            # Apply syntax highlighting if available
-            if PYGMENTS_AVAILABLE and code.strip():
-                try:
-                    highlighted = _syntax_highlight(code, f"file.{lang}" if lang else "")
-                    highlighted = highlighted.rstrip()
-                    for code_line in highlighted.split('\n'):
-                        result_lines.append(f"{C.GRAY}│{C.RST} {code_line}")
-                except:
-                    for code_line in code.split('\n'):
-                        result_lines.append(f"{C.GRAY}│{C.RST} {C.BYELLOW}{code_line}{C.RST}")
-            else:
-                for code_line in code.split('\n'):
-                    result_lines.append(f"{C.GRAY}│{C.RST} {C.BYELLOW}{code_line}{C.RST}")
-            
-            result_lines.append(f"{C.GRAY}└{'─' * 10}{C.RST}")
-            
-            last_end = match.end()
-        
-        # Add remaining text after last code block (with markdown rendering)
-        if last_end < len(text):
-            remaining = text[last_end:]
-            if remaining:
-                for line in remaining.split('\n'):
-                    rendered = render_markdown_line(line)
-                    wrapped = wrap_with_ansi(rendered, content_width)
-                    result_lines.extend(wrapped)
-        
-        # If no code blocks, just render markdown
-        if not result_lines:
-            for line in text.split('\n'):
-                rendered = render_markdown_line(line)
-                wrapped = wrap_with_ansi(rendered, content_width)
-                result_lines.extend(wrapped)
-        
-        return result_lines
-
-    lines = process_text(repair_utf8_mojibake(summary))
-
-    title = f"{icon} COMPLETE"
-    title_pad = max(0, content_width - len(title))
-
-    print()
-    print(f"  {border_color}╭{'─' * total_width}╮{C.RST}")
-    print(f"  {border_color}│{C.RST}  {color}{title}{C.RST}{' ' * title_pad}{border_color}│{C.RST}")
-    print(f"  {border_color}├{'─' * total_width}┤{C.RST}")
-
-    for line in lines:
-        # Strip ANSI codes for length calculation
-        visible_len = len(_ANSI_RE.sub('', line))
-        padding = max(0, content_width - visible_len)
-        print(f"  {border_color}│{C.RST}  {line}{' ' * padding}{border_color}│{C.RST}")
-
-    print(f"  {border_color}╰{'─' * total_width}╯{C.RST}")
-    print()
-
-
-
+    summary = fix_double_encoding(summary)
+    print(f"\n  {color}{icon}{C.RST} {summary}\n")
 
 
 def build_continue_prompt(state: State, last_tools: List[str], had_content: bool) -> str:
@@ -1080,6 +884,8 @@ def execute_tool_with_timeout(tc: Dict[str, Any], timeout: int = 60) -> str:
         "searchStackOverflow": 30,
         "httpRequest": 60,
         "downloadFile": 120,
+        "llmQuery": 120,
+        "llmMapReduce": 300,
     }
     
     # Adjust timeout based on tool
@@ -1193,6 +999,10 @@ def cmd_status(state: State, agent: Agent, args: str) -> None:
     print()
     print(_s("  Session Status:", C.BOLD))
     print(f"  Model: {_s(agent.model, C.CYAN)}")
+    if agent.is_local:
+        print(f"  Mode: {_s('Local (Ollama)', C.GREEN)} - {agent.api_base}")
+    else:
+        print(f"  Mode: {_s('OpenRouter', C.CYAN)}")
     print(f"  Context: {usage['used']:,}/{usage['max']:,} tokens ({usage['percent']}%)")
     print(f"  Auto mode: {_s('ON' if state.auto_mode else 'OFF', C.GREEN if state.auto_mode else C.RED)} (cap: {state.auto_cap})")
     print(f"  Output: {_s('VERBOSE' if state.verbose else ('COMPACT' if state.compact else 'NORMAL'), C.CYAN)}")
@@ -1343,7 +1153,32 @@ def cmd_model(state: State, agent: Agent, args: str) -> None:
     if not new_model:
         status(f"Current model: {agent.model}", "info")
         status(f"Context limit: {agent.max_context:,} tokens", "info")
+        if agent.is_local:
+            status(f"Mode: Local (Ollama) - {agent.api_base}", "info")
+        else:
+            status("Mode: OpenRouter", "info")
         return
+    if agent.is_local:
+        # When using Ollama, switch between local models without OpenRouter validation
+        try:
+            import requests as _req
+            r = _req.get("http://localhost:11434/api/tags", timeout=5)
+            model_names = [m.get("name", "") for m in r.json().get("models", [])]
+            matched = None
+            for mn in model_names:
+                if new_model == mn or new_model == mn.split(":")[0] or new_model.lower() in mn.lower():
+                    matched = mn
+                    break
+            if not matched:
+                status(f"Model '{new_model}' not found in Ollama", "error")
+                return
+            old = agent.model
+            agent.model = matched
+            status(f"Switched from {old} to {matched}", "success")
+            return
+        except Exception as e:
+            status(f"Error querying Ollama: {e}", "error")
+            return
     if not model_exists(new_model):
         status(f"Model not found: {new_model}", "error")
         return
@@ -1358,6 +1193,111 @@ def cmd_models(state: State, agent: Agent, args: str) -> None:
     status("Fetching models...", "context")
     models = fetch_models()
     display_models(models, args.strip())
+
+
+@cmd("ollama", "Use local Ollama model (ollama <model>) or switch back (ollama off)")
+def cmd_ollama(state: State, agent: Agent, args: str) -> None:
+    args = args.strip()
+    if not args:
+        if agent.is_local:
+            status(f"Currently using local Ollama model: {agent.model}", "info")
+            status(f"API base: {agent.api_base}", "info")
+        else:
+            status("Not using Ollama. Usage:", "info")
+            status("  ollama <model_name>  - Switch to a local Ollama model", "info")
+            status("  ollama off           - Switch back to OpenRouter", "info")
+        # List available Ollama models
+        try:
+            import requests as _req
+            r = _req.get("http://localhost:11434/api/tags", timeout=5)
+            if r.status_code == 200:
+                models = r.json().get("models", [])
+                if models:
+                    status("Available Ollama models:", "context")
+                    for m in models:
+                        name = m.get("name", "unknown")
+                        size_gb = m.get("size", 0) / (1024**3)
+                        status(f"  {name} ({size_gb:.1f} GB)", "info")
+                else:
+                    status("No Ollama models found. Pull one with: ollama pull <model>", "warning")
+        except Exception:
+            status("Ollama is not running. Start it with: ollama serve", "error")
+        return
+
+    if args.lower() == "off":
+        if not agent.is_local:
+            status("Already using OpenRouter", "info")
+            return
+        old_model = agent.model
+        agent.api_base = agent.OPENROUTER_API_BASE
+        agent.is_local = False
+        agent.model = "mistralai/devstral-2512:free"
+        agent.max_context = MODEL_LIMITS.get(agent.model, MODEL_LIMITS["default"])
+        status(f"Switched from local ({old_model}) back to OpenRouter ({agent.model})", "success")
+        return
+
+    # Switch to Ollama with the specified model
+    # Verify Ollama is running and model exists
+    try:
+        import requests as _req
+        r = _req.get("http://localhost:11434/api/tags", timeout=5)
+        if r.status_code != 200:
+            status("Ollama is not responding properly", "error")
+            return
+        models = r.json().get("models", [])
+        model_names = [m.get("name", "") for m in models]
+        # Allow partial matches (e.g., "qwen3-coder" matches "qwen3-coder:latest")
+        matched = None
+        for mn in model_names:
+            if args == mn or args == mn.split(":")[0]:
+                matched = mn
+                break
+        if not matched:
+            # Try substring match
+            for mn in model_names:
+                if args.lower() in mn.lower():
+                    matched = mn
+                    break
+        if not matched:
+            status(f"Model '{args}' not found in Ollama. Available models:", "error")
+            for mn in model_names:
+                status(f"  {mn}", "info")
+            return
+
+        old_model = agent.model
+        old_base = agent.api_base
+        agent.model = matched
+        agent.api_base = agent.OLLAMA_DEFAULT_BASE
+        agent.is_local = True
+        agent.max_context = 128000  # Default for local models
+        # Try to get actual context size from Ollama model info
+        try:
+            info = _req.post("http://localhost:11434/api/show", json={"model": matched}, timeout=10)
+            if info.status_code == 200:
+                model_info = info.json()
+                # Check modelfile for num_ctx or context_length
+                params = model_info.get("parameters", "")
+                if "num_ctx" in params:
+                    for line in params.split("\n"):
+                        if "num_ctx" in line:
+                            try:
+                                ctx = int(line.split()[-1])
+                                agent.max_context = ctx
+                            except (ValueError, IndexError):
+                                pass
+        except Exception:
+            pass
+
+        status(f"Switched to local Ollama model: {matched}", "success")
+        status(f"API base: {agent.api_base}", "info")
+        status(f"Context limit: {agent.max_context:,} tokens", "info")
+        if old_base != agent.OPENROUTER_API_BASE:
+            status(f"(was using: {old_model})", "info")
+        else:
+            status(f"(was using OpenRouter: {old_model})", "info")
+    except Exception as e:
+        status(f"Error connecting to Ollama: {e}", "error")
+        status("Make sure Ollama is running: ollama serve", "error")
 
 
 @cmd("vision", "Configure vision model (local 2b/4b/8b/32b or api)", shortcuts=["v"])
@@ -1422,11 +1362,6 @@ def cmd_vision(state: State, agent: Agent, args: str) -> None:
         status("  vision api         - Use OpenRouter API", "info")
         status("  vision status      - Show current configuration", "info")
 
-    status("After configuration, use Supabase CLI commands:", "info")
-    status("  - supabase link --project-ref <ref>  (link to remote project)", "info")
-    status("  - supabase db push                   (apply migrations)", "info")
-    status("  - supabase db pull                   (pull remote schema)", "info")
-    status("  - supabase status                    (check connection)", "info")
 
 
 @cmd("index", "Rebuild retrieval index")
@@ -1593,6 +1528,171 @@ Use the fsWrite tool to create each file. Start with requirements, then design, 
 
 
 # ==============================================================================
+# Episodic Memory & MAML Integration Helpers
+# ==============================================================================
+
+def _categorize_task(text: str) -> str:
+    """Auto-categorize a task from user input text."""
+    t = text.lower()
+    categories = [
+        ("debugging", ["error", "bug", "fix", "debug", "traceback", "broken", "crash", "issue"]),
+        ("web_app", ["web app", "website", "react", "nextjs", "vue", "angular", "frontend", "backend", "html", "css"]),
+        ("refactoring", ["refactor", "cleanup", "restructure", "reorganize", "rename", "simplify"]),
+        ("testing", ["test", "pytest", "unittest", "spec", "coverage", "tdd"]),
+        ("deployment", ["deploy", "docker", "ci/cd", "pipeline", "kubernetes", "aws", "build"]),
+        ("database", ["database", "sql", "postgres", "mongodb", "migration", "schema", "supabase"]),
+        ("api", ["api", "rest", "graphql", "endpoint", "route", "http", "request"]),
+        ("scripting", ["script", "automate", "cli", "command", "batch", "cron"]),
+        ("documentation", ["document", "readme", "docs", "comment", "explain"]),
+    ]
+    for cat, keywords in categories:
+        if any(kw in t for kw in keywords):
+            return cat
+    return "general"
+
+
+def _detect_languages_from_tools(tool_name: str, args: dict) -> list:
+    """Detect programming languages from tool calls."""
+    langs = []
+    path = args.get("path", "") or ""
+    paths = args.get("paths", [])
+    all_paths = [path] + (paths if isinstance(paths, list) else [])
+    ext_map = {
+        ".py": "python", ".js": "javascript", ".ts": "typescript",
+        ".tsx": "typescript", ".jsx": "javascript", ".java": "java",
+        ".go": "go", ".rs": "rust", ".c": "c", ".cpp": "cpp",
+        ".rb": "ruby", ".php": "php", ".html": "html", ".css": "css",
+    }
+    for p in all_paths:
+        if p:
+            from pathlib import Path as _P
+            ext = _P(p).suffix.lower()
+            if ext in ext_map:
+                langs.append(ext_map[ext])
+    return langs
+
+
+@cmd("memory", "Show episodic memory status and recent memories", shortcuts=["mem"])
+def cmd_memory(state: State, agent: Agent, args: str) -> None:
+    mem = get_memory()
+    mem.initialize()
+
+    if args.strip().lower() == "recall" or args.strip().startswith("recall "):
+        # Recall memories for a query
+        query = args.strip()[6:].strip() if args.strip().startswith("recall ") else state.task
+        if not query:
+            status("Usage: memory recall <query>", "warning")
+            return
+        memories = mem.recall(query, top_k=5)
+        if not memories:
+            status("No relevant memories found.", "info")
+            return
+        print()
+        print(_s("  Recalled Memories:", C.BOLD))
+        for i, m in enumerate(memories, 1):
+            outcome_color = C.BGREEN if m["outcome"] == "success" else (C.BRED if m["outcome"] == "failure" else C.BYELLOW)
+            _outcome = m["outcome"]
+            _score = m["score"]
+            _age = m["age_hours"]
+            _imp = m["importance"]
+            print(f"  {_s(str(i) + '.', C.DIM)} {_s(m['title'][:80], C.CYAN)} {_s(f'[{_outcome}]', outcome_color)}")
+            print(f"     {_s(f'relevance: {_score:.2f} | {_age:.0f}h ago | importance: {_imp:.1f}', C.DIM)}")
+            if m.get("tags"):
+                print(f"     {_s('tags: ' + ', '.join(m['tags']), C.DIM)}")
+            print(f"     {_s(m['snippet'][:200], C.GRAY)}")
+        print()
+        return
+
+    if args.strip().lower() == "clear":
+        import shutil as _shutil
+        from memory import EPISODES_DIR, STATS_FILE, PREFERENCES_FILE
+        if EPISODES_DIR.exists():
+            _shutil.rmtree(EPISODES_DIR)
+            EPISODES_DIR.mkdir(parents=True, exist_ok=True)
+        for f in [STATS_FILE, PREFERENCES_FILE]:
+            if f.exists():
+                f.unlink()
+        mem._initialized = False
+        mem.episodes.clear()
+        mem.index = mem.__class__.__init__  # Force reinit
+        mem.__init__()
+        status("Episodic memory cleared.", "info")
+        return
+
+    # Default: show status
+    summary = mem.get_session_summary()
+    current = mem.get_current_episode_info()
+    print()
+    print(_s("  Episodic Memory Status:", C.BOLD))
+    print(f"  {_s('Episodes:', C.CYAN)} {summary['total_episodes']} total ({summary['active_episodes']} active, {summary['consolidated_episodes']} consolidated)")
+    print(f"  {_s('Events:', C.CYAN)} {summary['total_events']} recorded")
+    print(f"  {_s('Recalls:', C.CYAN)} {summary['total_recalls']} (avg relevance: {summary['avg_recall_relevance']:.3f})")
+    if summary['preference_hints']:
+        print(f"  {_s('Patterns:', C.CYAN)} {summary['preference_hints']}")
+    if current:
+        print(f"  {_s('Current:', C.BYELLOW)} {current['title'][:60]} ({current['events_count']} events, {current['duration_minutes']:.1f}min)")
+    print()
+
+
+@cmd("learn", "Show MAML meta-learning progress and stats", shortcuts=["ml"])
+def cmd_learn(state: State, agent: Agent, args: str) -> None:
+    ml = get_meta_learner()
+    ml.initialize()
+
+    if args.strip().lower() == "clear":
+        import shutil as _shutil
+        from maml import MAML_DIR
+        if MAML_DIR.exists():
+            _shutil.rmtree(MAML_DIR)
+            MAML_DIR.mkdir(parents=True, exist_ok=True)
+        ml._initialized = False
+        ml.meta_params.clear()
+        ml.strategies.clear()
+        ml.replay_buffer.buffer.clear()
+        ml.performance_log.clear()
+        ml.__init__()
+        status("MAML learning data cleared.", "info")
+        return
+
+    progress = ml.get_learning_progress()
+    print()
+    print(_s("  MAML Meta-Learning Progress:", C.BOLD))
+    print(f"  {_s('Total tasks learned from:', C.CYAN)} {progress.get('total_tasks', 0)}")
+    print(f"  {_s('Recent success rate:', C.CYAN)} {progress.get('recent_success_rate', 0):.1%}")
+
+    improvement = progress.get('success_improvement', 0)
+    imp_color = C.BGREEN if improvement > 0 else (C.BRED if improvement < 0 else C.DIM)
+    print(f"  {_s('Success improvement:', C.CYAN)} {_s(f'{improvement:+.1%}', imp_color)}")
+
+    quality_imp = progress.get('quality_improvement', 0)
+    q_color = C.BGREEN if quality_imp > 0 else (C.BRED if quality_imp < 0 else C.DIM)
+    print(f"  {_s('Quality improvement:', C.CYAN)} {_s(f'{quality_imp:+.3f}', q_color)}")
+
+    print(f"  {_s('Meta-parameters:', C.CYAN)} {progress.get('meta_params_count', 0)}")
+    print(f"  {_s('Strategies learned:', C.CYAN)} {progress.get('strategies_count', 0)}")
+
+    replay = progress.get('replay_buffer', {})
+    print(f"  {_s('Replay buffer:', C.CYAN)} {replay.get('buffer_size', 0)}/{replay.get('max_size', 0)}")
+
+    top_skills = progress.get('top_skills', [])
+    if top_skills:
+        print(f"  {_s('Top skills:', C.BGREEN)}")
+        for s in top_skills[:5]:
+            bar_len = int(s['confidence'] * 20)
+            bar = '█' * bar_len + '░' * (20 - bar_len)
+            print(f"    {_s(s['name'].ljust(25), C.CYAN)} [{_s(bar, C.BGREEN)}] {s['confidence']:.0%} ({s['uses']} uses)")
+
+    growth = progress.get('growth_areas', [])
+    if growth:
+        print(f"  {_s('Growth areas:', C.BYELLOW)}")
+        for g in growth[:3]:
+            bar_len = int(g['confidence'] * 20)
+            bar = '█' * bar_len + '░' * (20 - bar_len)
+            print(f"    {_s(g['name'].ljust(25), C.CYAN)} [{_s(bar, C.BYELLOW)}] {g['confidence']:.0%} ({g['uses']} uses)")
+    print()
+
+
+# ==============================================================================
 # Main Execution Loop
 # ==============================================================================
 
@@ -1620,15 +1720,30 @@ def _verify_writes(state: State) -> None:
 
 _last_interrupt: float = 0.0
 _INTERRUPT_WINDOW: float = 2.0
-_global_stop_animations: bool = False
 
 def run(agent: Agent, state: State) -> None:
-    global _last_interrupt, _global_stop_animations
+    global _last_interrupt
     import time as _time
     
     header()
     status(f"Working directory: {os.getcwd()}", "info")
     status("Type 'help' for commands, 'plan' to start a new project", "info")
+    # --- Initialize Episodic Memory & MAML ---
+    try:
+        _mem = get_memory()
+        _mem.initialize()
+        _ml = get_meta_learner()
+        _ml.initialize()
+        _mem_summary = _mem.get_session_summary()
+        _ml_progress = _ml.get_learning_progress()
+        _ep_count = _mem_summary.get("total_episodes", 0)
+        _task_count = _ml_progress.get("total_tasks", 0)
+        if _ep_count > 0 or _task_count > 0:
+            status(f"Memory: {_ep_count} episodes | MAML: {_task_count} tasks learned | 'memory'/'learn' for details", "info")
+        else:
+            status("Memory & MAML systems active (will learn from your sessions)", "info")
+    except Exception as _e:
+        status(f"Memory/MAML init: {_e}", "warning")
     divider()
     done, total = _get_task_progress()
     if total > 0:
@@ -1665,7 +1780,35 @@ def run(agent: Agent, state: State) -> None:
             state.task = user_input if not state.task else state.task
             state.auto_steps = 0
             blurb = state_blurb(state)
+
+            # --- Episodic Memory & MAML: Start new episode/task ---
+            try:
+                _mem = get_memory()
+                _ml = get_meta_learner()
+                _task_cat = _categorize_task(user_input)
+                _mem.start_episode(
+                    title=user_input[:120],
+                    project_path=os.getcwd(),
+                    model=agent.model if hasattr(agent, 'model') else "",
+                )
+                _mem.record_user_input(user_input)
+                _ml.begin_task(user_input[:500], category=_task_cat)
+
+                # Inject memory context into prompt
+                _memory_context = _mem.recall_for_prompt(user_input)
+                _maml_context = _ml.build_adaptive_prompt_section(user_input, _task_cat)
+                _learned_context = ""
+                if _memory_context:
+                    _learned_context += "\n" + _memory_context
+                if _maml_context:
+                    _learned_context += "\n" + _maml_context
+            except Exception:
+                _learned_context = ""
+                _task_cat = "general"
+
             full_prompt = f"{blurb}\n\nUser request: {user_input}" if blurb else user_input
+            if _learned_context:
+                full_prompt = f"{_learned_context}\n\n{full_prompt}"
 
             while True:
                 if state.auto_mode and state.auto_steps >= state.auto_cap:
@@ -1673,78 +1816,26 @@ def run(agent: Agent, state: State) -> None:
                     break
                 state.auto_steps += 1
                 
-                # Live token counter during streaming with animated thinking indicator
                 _stream_chars = [0]
                 _has_content = [False]
-                _thinking_text = "thinking"
-                _thinking_idx = [0]
-                _token_count = [0]
-                _stop_animation = [False]
-                _line_count = [0]  # Track stream line count
-                
-                # Animated thinking indicator in background thread
-                def animate_thinking():
-                    try:
-                        while not _stop_animation[0] and not _has_content[0] and not _global_stop_animations:
-                            animated = ""
-                            for i, char in enumerate(_thinking_text):
-                                if i == _thinking_idx[0]:
-                                    animated += f"{C.WHITE}{char}{C.RST}"
-                                elif abs(i - _thinking_idx[0]) == 1 or (i == 0 and _thinking_idx[0] == len(_thinking_text) - 1) or (i == len(_thinking_text) - 1 and _thinking_idx[0] == 0):
-                                    animated += f"{C.BPURPLE}{char}{C.RST}"
-                                else:
-                                    animated += f"{C.DIM}{char}{C.RST}"
-                            
-                            # Add line count if available
-                            line_info = ""
-                            if _line_count[0] > 0:
-                                line_info = f" {C.DIM}[{_line_count[0]} lines]{C.RST}"
-                            
-                            sys.stdout.write(f'\r  {animated}{line_info}')
-                            sys.stdout.flush()
-                            _thinking_idx[0] = (_thinking_idx[0] + 1) % len(_thinking_text)
-                            time.sleep(0.15)
-                    except:
-                        pass  # Silently exit on any error
-                    finally:
-                        # Always clear the line when done
-                        try:
-                            sys.stdout.write('\r' + ' ' * 60 + '\r')
-                            sys.stdout.flush()
-                        except:
-                            pass
-                
-                # Start animation thread
-                animation_thread = threading.Thread(target=animate_thinking, daemon=True)
-                animation_thread.start()
-                
+
+                sys.stdout.write(f'\r  {C.DIM}thinking...{C.RST}')
+                sys.stdout.flush()
+
                 def on_chunk(chunk: str, line_count: int = 0):
                     _stream_chars[0] += len(chunk)
-                    _line_count[0] = line_count  # Update line count
-                    
                     if chunk.strip():
-                        # Has visible content - stop animation and print it
                         if not _has_content[0]:
-                            _stop_animation[0] = True
-                            time.sleep(0.2)  # Let animation thread finish
-                            sys.stdout.write('\r' + ' ' * 60 + '\r')
+                            sys.stdout.write('\r' + ' ' * 40 + '\r')
                             _has_content[0] = True
-                        
-                        # Print chunk at once instead of character-by-character
-                        # This allows terminal scrolling to work properly
                         print(f"{C.WHITE}{chunk}{C.RST}", end='', flush=True)
-                        _token_count[0] += len(chunk) // 4  # Estimate tokens
-                
+
                 content, tool_calls = agent.PromptWithTools(full_prompt, streaming=True, on_chunk=on_chunk)
                 had_content = bool(content)
-                
-                # Stop animation and clear
-                _stop_animation[0] = True
-                time.sleep(0.2)
+
                 if not _has_content[0]:
-                    sys.stdout.write('\r' + ' ' * 60 + '\r')
-                
-                # Show final token count
+                    sys.stdout.write('\r' + ' ' * 40 + '\r')
+
                 est_tokens = _stream_chars[0] // 4
                 if had_content:
                     print()
@@ -1776,6 +1867,16 @@ def run(agent: Agent, state: State) -> None:
                         if state.current_task_num > 0:
                             _update_task_status(state.current_task_num, True)
                             state.current_task_num = 0
+                        # --- Memory & MAML: Record task completion ---
+                        try:
+                            _mem = get_memory()
+                            _mem.record_event("solution", summary[:500])
+                            _mem.end_episode("success")
+                            _ml = get_meta_learner()
+                            _ml.record_solution(summary[:300])
+                            _ml.complete_task(outcome="success", quality_score=0.8)
+                        except Exception:
+                            pass
                         should_stop = True
                         agent.AddToolResult(tc_id, name, "Acknowledged. Waiting for user.")
                         break
@@ -1784,9 +1885,23 @@ def run(agent: Agent, state: State) -> None:
                         itype = args.get("interactionType", "info")
                         if itype == "complete":
                             _print_completion_box(msg, success=True)
+                            try:
+                                get_memory().record_event("solution", msg[:500])
+                                get_memory().end_episode("success")
+                                get_meta_learner().record_solution(msg[:300])
+                                get_meta_learner().complete_task("success", 0.75)
+                            except Exception:
+                                pass
                             should_stop = True
                         elif itype == "error":
                             _print_completion_box(msg, success=False)
+                            try:
+                                get_memory().record_event("error", msg[:500])
+                                get_memory().end_episode("failure")
+                                get_meta_learner().record_error(msg[:300])
+                                get_meta_learner().complete_task("failure", 0.3)
+                            except Exception:
+                                pass
                             should_stop = True
                         else:
                             status(msg, "info")
@@ -1794,6 +1909,12 @@ def run(agent: Agent, state: State) -> None:
                             answer = input(f"{C.BPURPLE}  ╰─▸ {C.RST}")
                             agent.AddToolResult(tc_id, name, f"User response: {answer}")
                             full_prompt = answer
+                        continue
+                    # Guard against hallucinated/unknown tool names
+                    _valid_tool_names = {t['function']['name'] for t in NATIVE_TOOLS}
+                    if name not in _valid_tool_names:
+                        status(f"Unknown tool '{name}' — model hallucinated a tool name, retrying", "warning")
+                        agent.AddToolResult(tc_id, name, f"Error: '{name}' is not a valid tool. You MUST only use tools from the provided tool definitions. Do NOT invent tool names.")
                         continue
                     if name == "requestUserCommand":
                         cmd = args.get("command", "")
@@ -1814,6 +1935,27 @@ def run(agent: Agent, state: State) -> None:
                     # Execute tool with timeout protection
                     result = execute_tool_with_timeout(tc, timeout=60)
                     
+                    # --- Memory & MAML: Record tool usage ---
+                    try:
+                        _mem = get_memory()
+                        _ml = get_meta_learner()
+                        _result_str = str(result)[:1000] if result else ""
+                        _mem.record_tool_call(name, args, _result_str)
+                        _ml.record_tool_usage(name)
+                        # Track file modifications
+                        if name in ("fsWrite", "fsAppend", "strReplace", "insertLines", "removeLines"):
+                            _fpath = args.get("path", "")
+                            if _fpath:
+                                _ml.record_file_modified(_fpath)
+                        # Detect languages from file paths
+                        for _lang in _detect_languages_from_tools(name, args):
+                            _ml.record_language(_lang)
+                        # Record errors from results
+                        if _result_str and any(w in _result_str.lower() for w in ["error", "exception", "traceback"]):
+                            _ml.record_error(_result_str[:300])
+                    except Exception:
+                        pass
+
                     if name in ("fsWrite", "fsAppend", "strReplace"):
                         path = args.get("path", "")
                         if path:
@@ -1840,28 +1982,23 @@ def run(agent: Agent, state: State) -> None:
                 full_prompt = build_continue_prompt(state, tools_used_this_turn, had_content)
                 # Loop continues to call PromptWithTools again
             
-            # Clean up any lingering output before returning to prompt
             state.recent_writes.clear()
-            _time.sleep(0.2)
-            sys.stdout.write('\r' + ' ' * 60 + '\r')
-            sys.stdout.flush()
         except KeyboardInterrupt:
             now = _time.time()
+            sys.stdout.write('\r' + ' ' * 80 + '\r')
+            sys.stdout.flush()
             if now - _last_interrupt < _INTERRUPT_WINDOW:
-                # Stop all animations globally
-                _global_stop_animations = True
-                _time.sleep(0.3)  # Give threads time to see the flag
-                sys.stdout.write('\r' + ' ' * 60 + '\r')
-                sys.stdout.flush()
                 print(f"\n\n  {C.BPURPLE}Goodbye!{C.RST}\n")
                 sys.exit(0)
             else:
                 _last_interrupt = now
-                # Give any animation threads time to clean up
-                _time.sleep(0.3)
-                sys.stdout.write('\r' + ' ' * 60 + '\r')
-                sys.stdout.flush()
                 print(f"\n  {C.BYELLOW}[!] Interrupted. Press Ctrl+C again to exit.{C.RST}")
+                # --- Memory & MAML: Record abandoned task ---
+                try:
+                    get_memory().end_episode("abandoned")
+                    get_meta_learner().complete_task("failure", 0.2)
+                except Exception:
+                    pass
                 state.reset_task()
                 pending_prompt = None
                 continue

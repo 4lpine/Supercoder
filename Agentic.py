@@ -10,6 +10,15 @@ import concurrent.futures
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple, Iterator, Set
 
+# --- Helper Functions ---
+def _clear_animation_line():
+    """Clear any animation line before printing (prevents 'thinking' text from appearing)."""
+    try:
+        sys.stdout.write('\r' + ' ' * 80 + '\r')
+        sys.stdout.flush()
+    except:
+        pass
+
 # --- PyInstaller Path Helper ---
 def _get_agentic_base_path() -> Path:
     """Get base path - works both in dev and when bundled with PyInstaller."""
@@ -92,6 +101,18 @@ class TokenCounter:
 
 
 # --- Encoding Fix Helper ---
+def _strip_think_tags(text: str) -> str:
+    """Strip <think>...</think> blocks from model output (used by qwen3/local models)."""
+    if not text or '<think>' not in text:
+        return text
+    import re
+    # Remove complete <think>...</think> blocks
+    result = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+    # Remove unclosed <think> tag at the end (streaming partial)
+    result = re.sub(r'<think>.*$', '', result, flags=re.DOTALL)
+    return result.strip()
+
+
 def _fix_encoding_in_dict(obj):
     """Recursively fix double-encoded UTF-8 in dictionary/list structures."""
     if isinstance(obj, dict):
@@ -208,8 +229,91 @@ NATIVE_TOOLS = [
     {"type": "function", "function": {"name": "imageGenerateBatch", "description": "Generate multiple images from a list of prompts efficiently. The AI determines the best aspect ratio and size for each image. Great for creating image sets for projects.", "parameters": {"type": "object", "properties": {"prompts": {"type": "array", "items": {"type": "string"}, "description": "List of text descriptions for images to generate"}, "model": {"type": "string", "description": "Image model to use (default: google/gemini-2.5-flash-image)"}, "saveDir": {"type": "string", "description": "Directory to save images (default: .supercoder/images/)"}}, "required": ["prompts"]}}},
     {"type": "function", "function": {"name": "imageListModels", "description": "List all available image generation models with their capabilities and features", "parameters": {"type": "object", "properties": {}, "required": []}}},
     {"type": "function", "function": {"name": "imageEdit", "description": "Edit an existing image based on a text prompt. Can modify, enhance, or transform images.", "parameters": {"type": "object", "properties": {"imagePath": {"type": "string", "description": "Path to the image to edit"}, "prompt": {"type": "string", "description": "Description of how to edit the image"}, "model": {"type": "string", "description": "Image model to use (default: google/gemini-2.5-flash-image)"}, "savePath": {"type": "string", "description": "Optional path to save edited image"}}, "required": ["imagePath", "prompt"]}}},
-    {"type": "function", "function": {"name": "imageGenerateForProject", "description": "Generate a complete set of images for a specific project type (website, app, logo, banner, icon). Automatically creates appropriate images for the project.", "parameters": {"type": "object", "properties": {"projectType": {"type": "string", "enum": ["website", "app", "logo", "banner", "icon"], "description": "Type of project to generate images for"}, "descriptions": {"type": "array", "items": {"type": "string"}, "description": "Optional custom descriptions for each image"}, "saveDir": {"type": "string", "description": "Directory to save images (default: .supercoder/images/{projectType})"}}, "required": ["projectType"]}}}
+    {"type": "function", "function": {"name": "imageGenerateForProject", "description": "Generate a complete set of images for a specific project type (website, app, logo, banner, icon). Automatically creates appropriate images for the project.", "parameters": {"type": "object", "properties": {"projectType": {"type": "string", "enum": ["website", "app", "logo", "banner", "icon"], "description": "Type of project to generate images for"}, "descriptions": {"type": "array", "items": {"type": "string"}, "description": "Optional custom descriptions for each image"}, "saveDir": {"type": "string", "description": "Directory to save images (default: .supercoder/images/{projectType})"}}, "required": ["projectType"]}}},
+    # RLM (Recursive Language Model) Tools
+    {"type": "function", "function": {"name": "llmQuery", "description": "Make a recursive LLM self-call on a sub-problem. Use to decompose complex problems, search through large text, or independently verify answers. Each call is a fresh conversation with no history.", "parameters": {"type": "object", "properties": {"query": {"type": "string", "description": "The question or task for the sub-call"}, "context": {"type": "string", "description": "Optional context text (e.g., a chunk of a file) to include"}, "maxTokens": {"type": "integer", "description": "Max response tokens (default: 1024)"}}, "required": ["query"]}}},
+    {"type": "function", "function": {"name": "llmMapReduce", "description": "Split large text into overlapping chunks, process each with a map prompt via LLM, then combine results with a reduce prompt. Use for summarizing long files, searching large codebases, or extracting info from large documents.", "parameters": {"type": "object", "properties": {"text": {"type": "string", "description": "The full text to process"}, "mapPrompt": {"type": "string", "description": "Prompt to run on each chunk (the chunk is provided as context)"}, "reducePrompt": {"type": "string", "description": "Prompt to combine all chunk results into a final answer"}, "chunkSize": {"type": "integer", "description": "Characters per chunk (default: 3000)"}, "overlap": {"type": "integer", "description": "Overlap between chunks in characters (default: 200)"}}, "required": ["text", "mapPrompt", "reducePrompt"]}}}
 ]
+
+
+# --- RLM (Recursive Language Model) Support ---
+_current_agent = None  # Set in Agent.__init__() for RLM recursive calls
+
+
+def _llm_query(query: str, context: str = "", max_tokens: int = 1024) -> dict:
+    """Make a recursive LLM self-call on a sub-problem."""
+    try:
+        if _current_agent is None:
+            return {"error": "No active agent. llmQuery requires an active agent session."}
+
+        model = _current_agent.model
+        api_base = _current_agent.api_base
+        is_local = _current_agent.is_local
+
+        headers = {"Content-Type": "application/json"}
+        if not is_local:
+            headers["Authorization"] = f"Bearer {TokenManager.get_token()}"
+
+        messages = [
+            {"role": "system", "content": "You are a helpful assistant answering a sub-query. Be concise and precise. Return ONLY the answer, no preamble."}
+        ]
+        user_content = query
+        if context:
+            user_content = f"Context:\n{context}\n\nQuestion: {query}"
+        messages.append({"role": "user", "content": user_content})
+
+        resp = requests.post(
+            api_base,
+            headers=headers,
+            json={"model": model, "messages": messages, "max_tokens": max_tokens},
+            timeout=(10, 600 if is_local else 120)
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        answer = data["choices"][0]["message"]["content"]
+        tokens_used = data.get("usage", {}).get("total_tokens", 0)
+        return {"answer": answer, "model": model, "tokens_used": tokens_used}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def _llm_map_reduce(text: str, map_prompt: str, reduce_prompt: str, chunk_size: int = 3000, overlap: int = 200) -> dict:
+    """Split text into overlapping chunks, map each with LLM, then reduce."""
+    try:
+        # Split into overlapping chunks
+        chunks = []
+        start = 0
+        while start < len(text):
+            end = start + chunk_size
+            chunks.append(text[start:end])
+            start += chunk_size - overlap
+            if start >= len(text):
+                break
+
+        if not chunks:
+            return {"error": "No text to process"}
+
+        # Map phase: process each chunk
+        chunk_results = []
+        for i, chunk in enumerate(chunks):
+            result = _llm_query(map_prompt, context=chunk, max_tokens=1024)
+            if "error" in result:
+                chunk_results.append(f"[Chunk {i+1} error: {result['error']}]")
+            else:
+                chunk_results.append(result.get("answer", ""))
+
+        # Reduce phase: combine results
+        combined = "\n\n".join(f"--- Chunk {i+1}/{len(chunks)} ---\n{r}" for i, r in enumerate(chunk_results))
+        final = _llm_query(reduce_prompt, context=combined, max_tokens=2048)
+
+        return {
+            "answer": final.get("answer", final.get("error", "")),
+            "chunks_processed": len(chunks),
+            "chunk_results": chunk_results,
+            "model": _current_agent.model if _current_agent else "unknown"
+        }
+    except Exception as e:
+        return {"error": str(e)}
 
 
 # Model context limits
@@ -228,10 +332,14 @@ MODEL_LIMITS = {
 
 # --- Lightweight File Indexer ---
 class FileIndexer:
+    """Lightweight inverted index: token -> set of file paths. Much smaller
+    and faster to query than storing raw token lists per file."""
+
     def __init__(self, index_path: Path = None, max_file_bytes: int = 200_000):
         self.index_path = index_path or Path(".supercoder/index.json")
         self.max_file_bytes = max_file_bytes
-        self.index: Dict[str, Any] = {"files": {}, "built_at": time.time()}
+        # index format: {"inverted": {token: [path, ...]}, "files": {path: {mtime, size}}, "built_at": float}
+        self.index: Dict[str, Any] = {"inverted": {}, "files": {}, "built_at": time.time()}
         self._stop = {"the","a","an","and","or","of","to","in","on","for","with","at","by","from","is","are","was","were","be","it","this","that","as","so","if","then","else","elif","when","while","do","does","did","but","not"}
         self._ignore_dirs = {".git", "__pycache__", "node_modules", ".venv", "venv", ".supercoder", ".Information"}
         self._ignore_exts = {".pyc", ".pyo", ".exe", ".dll", ".so", ".dylib"}
@@ -251,20 +359,18 @@ class FileIndexer:
             tokens.append("".join(word))
         return [t for t in tokens if t and t not in self._stop and len(t) > 2]
 
-    def _file_tokens(self, path: Path) -> List[str]:
+    def _file_tokens(self, path: Path) -> Set[str]:
         try:
             data = path.read_bytes()[:self.max_file_bytes]
-            try:
-                text = data.decode("utf-8", errors="ignore")
-            except Exception:
-                return []
-            return self._tokenize(text)
+            text = data.decode("utf-8", errors="ignore")
+            return set(self._tokenize(text))
         except Exception:
-            return []
+            return set()
 
     def build(self, root: str = ".") -> None:
         root_path = Path(root)
-        files = {}
+        inverted: Dict[str, List[str]] = {}
+        files: Dict[str, Dict[str, Any]] = {}
         for r, dirs, filenames in os.walk(root_path):
             dirs[:] = [d for d in dirs if d not in self._ignore_dirs]
             for fname in filenames:
@@ -274,8 +380,17 @@ class FileIndexer:
                 tokens = self._file_tokens(p)
                 if not tokens:
                     continue
-                files[str(p)] = {"mtime": p.stat().st_mtime, "size": p.stat().st_size, "tokens": tokens[:800]}
-        self.index = {"files": files, "built_at": time.time()}
+                path_str = str(p)
+                try:
+                    st = p.stat()
+                    files[path_str] = {"mtime": st.st_mtime, "size": st.st_size}
+                except Exception:
+                    files[path_str] = {"mtime": 0, "size": 0}
+                for token in tokens:
+                    if token not in inverted:
+                        inverted[token] = []
+                    inverted[token].append(path_str)
+        self.index = {"inverted": inverted, "files": files, "built_at": time.time()}
         self.save()
 
     def save(self):
@@ -288,32 +403,50 @@ class FileIndexer:
     def load(self):
         if self.index_path.exists():
             try:
-                self.index = json.loads(self.index_path.read_text())
+                loaded = json.loads(self.index_path.read_text())
+                # Migrate old format (per-file token lists) to inverted index
+                if "inverted" not in loaded and "files" in loaded:
+                    first_val = next(iter(loaded["files"].values()), {})
+                    if "tokens" in first_val:
+                        # Old format — rebuild on next search
+                        self.index = {"inverted": {}, "files": {}, "built_at": 0}
+                        return
+                self.index = loaded
             except Exception:
-                self.index = {"files": {}, "built_at": time.time()}
+                self.index = {"inverted": {}, "files": {}, "built_at": time.time()}
 
     def search(self, query: str, limit: int = 8) -> List[str]:
-        if not query or not self.index.get("files"):
+        if not query:
+            return []
+        inverted = self.index.get("inverted", {})
+        files_meta = self.index.get("files", {})
+        if not inverted and not files_meta:
             return []
         q_tokens = set(self._tokenize(query))
         if not q_tokens:
             return []
-        scored = []
-        for path, meta in self.index["files"].items():
-            file_tokens = meta.get("tokens", [])
-            if not file_tokens:
-                continue
-            score = sum(1 for qt in q_tokens if qt in set(file_tokens))
-            if score > 0:
-                scored.append((score, meta.get("mtime", 0), path))
+        # Score: how many query tokens appear in a file
+        scores: Dict[str, int] = {}
+        for qt in q_tokens:
+            for path in inverted.get(qt, []):
+                scores[path] = scores.get(path, 0) + 1
+        if not scores:
+            return []
+        scored = [(score, files_meta.get(p, {}).get("mtime", 0), p) for p, score in scores.items()]
         scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
         return [p for _, _, p in scored[:limit]]
 
 
 class Agent:
-    def __init__(self, initial_prompt: str, model: str = "mistralai/devstral-2512:free", streaming: bool = False, embedding_model: str = None):
+    # Default API base URL (OpenRouter)
+    OPENROUTER_API_BASE = "https://openrouter.ai/api/v1/chat/completions"
+    OLLAMA_DEFAULT_BASE = "http://localhost:11434/v1/chat/completions"
+
+    def __init__(self, initial_prompt: str, model: str = "mistralai/devstral-2512:free", streaming: bool = False, embedding_model: str = None, api_base: str = None):
         self.model = model
         self.streaming = streaming
+        self.api_base = api_base or self.OPENROUTER_API_BASE
+        self.is_local = self.api_base != self.OPENROUTER_API_BASE
         self.messages = []
         self.context_files = []
         self.mandatory_files = []
@@ -323,6 +456,8 @@ class Agent:
         self.max_context = MODEL_LIMITS.get(model, MODEL_LIMITS["default"])
         self.reserved_output = 4096
         self.messages.append({"role": "system", "content": initial_prompt})
+        global _current_agent
+        _current_agent = self
 
     def add_context(self, files):
         if isinstance(files, str):
@@ -452,6 +587,8 @@ class Agent:
             streaming = self.streaming
         context = self._build_context_string(user_input)
         full_input = f"{context}\n\n{user_input}" if context else user_input
+        if self.is_local:
+            full_input += " /no_think"
         self.messages.append({"role": "user", "content": full_input})
         response = self._call_api(streaming=streaming)
         self.messages.append({"role": "assistant", "content": response})
@@ -464,6 +601,9 @@ class Agent:
         context = self._build_context_string(user_input)
         current_messages = list(self.messages)
         full_input = f"{context}\n\n{user_input}" if context else user_input
+        # For local models, append /no_think to suppress thinking tokens
+        if self.is_local:
+            full_input += " /no_think"
         current_messages.append({"role": "user", "content": full_input})
         self.messages.append({"role": "user", "content": user_input})
         original_messages = self.messages
@@ -520,195 +660,123 @@ class Agent:
         self.messages.append({"role": "tool", "tool_call_id": tool_call_id, "content": str(result)})
 
 
-    def _call_api(self, streaming: bool = False) -> str:
+    def _api_request_with_retry(self, payload: dict, streaming: bool, on_success, error_default, charset_utf8: bool = False):
         """
-        Call API without tools. Includes hard timeout protection to prevent infinite hangs.
+        Shared retry/timeout wrapper for API calls. Eliminates duplication between
+        _call_api and _call_api_with_tools.
+
+        Args:
+            payload: JSON body for the request (model, messages, tools, etc.)
+            streaming: Whether to use streaming
+            on_success: Callable(resp, streaming) -> result. Processes a successful response.
+            error_default: Value to return when all retries are exhausted.
+            charset_utf8: If True, use charset=utf-8 in Content-Type header.
         """
-        max_retries = 5
-        max_total_time = 240  # Hard limit: 4 minutes total for all retries
+        max_retries = 2
+        max_total_time = 900 if self.is_local else 60
         start_time = time.time()
-        
+
         for attempt in range(max_retries):
-            # Check if we've exceeded total time budget
             elapsed = time.time() - start_time
             if elapsed > max_total_time:
                 print(f"\n[API call exceeded total time budget of {max_total_time}s]")
-                return "[Error: API call timed out]"
-            
+                return error_default
+
             try:
-                token = TokenManager.get_token()
-                
-                # Add read timeout for streaming to prevent hangs
-                # (connect_timeout, read_timeout)
-                # Connect timeout: 10s (just to check if server responds)
-                # Read timeout: 180s (for full response to complete)
-                timeout = (10, 180) if streaming else (10, 120)
-                
+                ct = "application/json; charset=utf-8" if charset_utf8 else "application/json"
+                headers = {"Content-Type": ct}
+
+                if self.is_local:
+                    # Local LLM (Ollama etc.) - no auth needed, longer timeouts
+                    timeout = (10, 600) if streaming else (10, 600)
+                else:
+                    # OpenRouter - use API token
+                    token = TokenManager.get_token()
+                    headers["Authorization"] = f"Bearer {token}"
+                    timeout = (10, 180) if streaming else (10, 120)
+
                 resp = requests.post(
-                    "https://openrouter.ai/api/v1/chat/completions",
-                    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-                    json={
-                        "model": self.model,
-                        "messages": self.messages,
-                        "stream": streaming,
-                        "plugins": [{"id": "response-healing"}]
-                    },
+                    self.api_base,
+                    headers=headers,
+                    json=payload,
                     timeout=timeout, stream=streaming
                 )
+                if charset_utf8:
+                    resp.encoding = 'utf-8'
                 resp.raise_for_status()
-                if streaming:
-                    result = ""
-                    last_data_time = time.time()
-                    stream_timeout = 60  # Max seconds between chunks
-                    loop_start = time.time()
-                    max_loop_time = 180  # Max 3 minutes for entire stream
-                    
-                    # Wrap streaming in a thread to prevent indefinite hangs
-                    def stream_response():
-                        nonlocal result
-                        try:
-                            for line in resp.iter_lines(decode_unicode=True):
-                                # Check for stream timeout (no data received)
-                                current_time = time.time()
-                                
-                                # Hard timeout for entire streaming loop
-                                if current_time - loop_start > max_loop_time:
-                                    print(f"\n[Stream exceeded max time of {max_loop_time}s]")
-                                    return
-                                
-                                # Timeout between chunks
-                                if current_time - last_data_time > stream_timeout:
-                                    print(f"\n[Stream timeout: no data for {stream_timeout}s]")
-                                    return
-                                
-                                if line:
-                                    last_data_time = current_time  # Reset timeout on data
-                                    if line.startswith('data: '):
-                                        line = line[6:]
-                                    if line == '[DONE]':
-                                        break
-                                    try:
-                                        data = json.loads(line)
-                                        delta = data['choices'][0].get('delta', {})
-                                        if 'content' in delta:
-                                            chunk = delta['content']
-                                            print(chunk, end='', flush=True)
-                                            result += chunk
-                                    except:
-                                        pass
-                        except Exception as e:
-                            print(f"\n[Stream error: {e}]")
-                    
-                    # Execute streaming in thread with timeout
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                        future = executor.submit(stream_response)
-                        try:
-                            future.result(timeout=max_loop_time + 10)  # Extra buffer
-                        except concurrent.futures.TimeoutError:
-                            print(f"\n[Stream thread timeout after {max_loop_time + 10}s]")
-                            raise requests.exceptions.Timeout("Stream thread timeout")
-                    
-                    print()
-                    return result
-                else:
-                    data = resp.json()
-                    return data["choices"][0]["message"]["content"]
+                return on_success(resp, streaming)
+
             except requests.exceptions.HTTPError as e:
-                status = e.response.status_code if e.response else 0
+                http_status = e.response.status_code if e.response else 0
                 body = ""
                 try:
                     body = e.response.text[:500] if e.response else ""
                 except:
                     pass
-                print(f"[HTTP Error {status}, attempt {attempt + 1}] {body}")
-                if status in (401, 403, 429):
+                _clear_animation_line()
+                print(f"[HTTP Error {http_status}, attempt {attempt + 1}] {body}")
+                if not self.is_local and http_status in (401, 403, 429):
                     TokenManager.rotate_token()
                 time.sleep(2 ** attempt)
             except requests.exceptions.ConnectionError as e:
+                _clear_animation_line()
                 print(f"[Connection Error, attempt {attempt + 1}] {e}")
                 time.sleep(2 ** attempt)
             except requests.exceptions.Timeout as e:
+                _clear_animation_line()
                 print(f"[Timeout Error, attempt {attempt + 1}] {e}")
                 time.sleep(2 ** attempt)
             except Exception as e:
+                _clear_animation_line()
                 print(f"[Error: {type(e).__name__}: {e}, attempt {attempt + 1}]")
                 time.sleep(2 ** attempt)
-        return "[Error: All API attempts failed]"
 
+        return error_default
 
-    def _call_api_with_tools(self, tools: List[dict], streaming: bool = False, on_chunk=None) -> Tuple[str, List[dict]]:
-        """
-        Call API with tools. Includes hard timeout protection to prevent infinite hangs.
-        """
-        max_retries = 5
-        max_total_time = 240  # Hard limit: 4 minutes total for all retries
-        start_time = time.time()
-        
-        for attempt in range(max_retries):
-            # Check if we've exceeded total time budget
-            elapsed = time.time() - start_time
-            if elapsed > max_total_time:
-                print(f"\n[API call exceeded total time budget of {max_total_time}s]")
-                return "[Error: API call timed out]", []
-            
+    @staticmethod
+    def _run_stream_in_thread(stream_fn, max_loop_time: int = 180):
+        """Run a streaming function in a thread with a hard timeout."""
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(stream_fn)
             try:
-                token = TokenManager.get_token()
-                
-                # Add read timeout for streaming to prevent hangs
-                # (connect_timeout, read_timeout)
-                # Connect timeout: 10s (just to check if server responds)
-                # Read timeout: 180s (for full response to complete)
-                timeout = (10, 180) if streaming else (10, 120)
-                
-                resp = requests.post(
-                    "https://openrouter.ai/api/v1/chat/completions",
-                    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json; charset=utf-8"},
-                    json={
-                        "model": self.model,
-                        "messages": self.messages,
-                        "tools": tools,
-                        "tool_choice": "auto",
-                        "stream": streaming,
-                        "plugins": [{"id": "response-healing"}]
-                    },
-                    timeout=timeout, stream=streaming
-                )
-                resp.encoding = 'utf-8'  # Explicitly set response encoding
-                resp.raise_for_status()
-                
-                if streaming:
-                    content = ""
-                    tool_calls_data = {}
-                    last_data_time = [time.time()]  # Use list for nonlocal mutation
-                    stream_timeout = 60  # Max seconds between chunks
-                    loop_start = time.time()
-                    max_loop_time = 180  # Max 3 minutes for entire stream
-                    
-                    # Wrap streaming in a thread to prevent indefinite hangs
-                    def stream_response():
-                        nonlocal content, tool_calls_data
-                        try:
-                            line_count = 0
-                            for line in resp.iter_lines(decode_unicode=True):
-                                line_count += 1
-                                
-                                # Check for stream timeout (no data received)
-                                current_time = time.time()
-                                
-                                # Hard timeout for entire streaming loop
-                                if current_time - loop_start > max_loop_time:
-                                    print(f"\n[Stream exceeded max time of {max_loop_time}s]")
-                                    return
-                                
-                                # Timeout between chunks
-                                if current_time - last_data_time[0] > stream_timeout:
-                                    print(f"\n[Stream timeout: no data for {stream_timeout}s]")
-                                    return
-                                
-                                if not line:
-                                    continue
-                                
-                                last_data_time[0] = current_time  # Reset timeout on data
+                future.result(timeout=max_loop_time + 10)
+            except concurrent.futures.TimeoutError:
+                print(f"\n[Stream thread timeout after {max_loop_time + 10}s]")
+                raise requests.exceptions.Timeout("Stream thread timeout")
+
+    def _call_api(self, streaming: bool = False) -> str:
+        """Call API without tools."""
+        payload = {
+            "model": self.model,
+            "messages": self.messages,
+            "stream": streaming,
+        }
+        if not self.is_local:
+            payload["plugins"] = [{"id": "response-healing"}]
+
+        is_local = self.is_local
+        def on_success(resp, is_streaming):
+            if is_streaming:
+                result = ""
+                last_data_time = time.time()
+                stream_timeout = 300 if is_local else 60
+                loop_start = time.time()
+                max_loop_time = 900 if is_local else 180
+                in_think = [False]  # Track if inside <think> block
+
+                def stream_response():
+                    nonlocal result, last_data_time
+                    try:
+                        for line in resp.iter_lines(decode_unicode=True):
+                            current_time = time.time()
+                            if current_time - loop_start > max_loop_time:
+                                print(f"\n[Stream exceeded max time of {max_loop_time}s]")
+                                return
+                            if current_time - last_data_time > stream_timeout:
+                                print(f"\n[Stream timeout: no data for {stream_timeout}s]")
+                                return
+                            if line:
+                                last_data_time = current_time
                                 if line.startswith('data: '):
                                     line = line[6:]
                                 if line == '[DONE]':
@@ -716,87 +784,161 @@ class Agent:
                                 try:
                                     data = json.loads(line)
                                     delta = data['choices'][0].get('delta', {})
-                                    if 'content' in delta and delta['content']:
+                                    if 'content' in delta:
                                         chunk = delta['content']
-                                        content += chunk
-                                        if on_chunk:
-                                            on_chunk(chunk, line_count)  # Pass line count to callback
-                                    if 'tool_calls' in delta:
-                                        for tc in delta['tool_calls']:
-                                            idx = tc.get('index', 0)
-                                            if idx not in tool_calls_data:
-                                                tool_calls_data[idx] = {'id': '', 'name': '', 'arguments': ''}
-                                            if 'id' in tc:
-                                                tool_calls_data[idx]['id'] = tc['id']
-                                            if 'function' in tc:
-                                                if 'name' in tc['function']:
-                                                    tool_calls_data[idx]['name'] = tc['function']['name']
-                                                if 'arguments' in tc['function']:
-                                                    tool_calls_data[idx]['arguments'] += tc['function']['arguments']
+                                        # Filter <think> blocks for local models
+                                        if is_local:
+                                            if '<think>' in chunk:
+                                                in_think[0] = True
+                                                chunk = chunk[:chunk.index('<think>')]
+                                            if in_think[0]:
+                                                if '</think>' in chunk:
+                                                    in_think[0] = False
+                                                    chunk = chunk[chunk.index('</think>') + 8:]
+                                                else:
+                                                    result += delta['content']
+                                                    continue
+                                        if chunk:
+                                            print(chunk, end='', flush=True)
+                                        result += delta['content']
                                 except:
                                     pass
-                        except Exception as e:
-                            print(f"\n[Stream error: {e}]")
-                    
-                    # Execute streaming in thread with timeout
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                        future = executor.submit(stream_response)
+                    except Exception as e:
+                        print(f"\n[Stream error: {e}]")
+
+                self._run_stream_in_thread(stream_response, max_loop_time)
+                print()
+                # Strip any remaining think tags from accumulated result
+                if is_local:
+                    result = _strip_think_tags(result)
+                return result
+            else:
+                data = resp.json()
+                content = data["choices"][0]["message"]["content"]
+                if is_local and content:
+                    content = _strip_think_tags(content)
+                return content
+
+        return self._api_request_with_retry(payload, streaming, on_success, "[Error: All API attempts failed]")
+
+
+    def _call_api_with_tools(self, tools: List[dict], streaming: bool = False, on_chunk=None) -> Tuple[str, List[dict]]:
+        """Call API with tools."""
+        payload = {
+            "model": self.model,
+            "messages": self.messages,
+            "tools": tools,
+            "tool_choice": "auto",
+            "stream": streaming,
+        }
+        if not self.is_local:
+            payload["plugins"] = [{"id": "response-healing"}]
+
+        is_local = self.is_local
+        def on_success(resp, is_streaming):
+            if is_streaming:
+                content = ""
+                tool_calls_data = {}
+                last_data_time = [time.time()]
+                stream_timeout = 300 if is_local else 60
+                loop_start = time.time()
+                max_loop_time = 900 if is_local else 180
+                in_think = [False]  # Track if inside <think> block
+
+                def stream_response():
+                    nonlocal content, tool_calls_data
+                    try:
+                        line_count = 0
+                        for line in resp.iter_lines(decode_unicode=True):
+                            line_count += 1
+                            current_time = time.time()
+                            if current_time - loop_start > max_loop_time:
+                                print(f"\n[Stream exceeded max time of {max_loop_time}s]")
+                                return
+                            if current_time - last_data_time[0] > stream_timeout:
+                                print(f"\n[Stream timeout: no data for {stream_timeout}s]")
+                                return
+                            if not line:
+                                continue
+                            last_data_time[0] = current_time
+                            if line.startswith('data: '):
+                                line = line[6:]
+                            if line == '[DONE]':
+                                break
+                            try:
+                                data = json.loads(line)
+                                delta = data['choices'][0].get('delta', {})
+                                if 'content' in delta and delta['content']:
+                                    raw_chunk = delta['content']
+                                    chunk = raw_chunk
+                                    # Filter <think> blocks for local models
+                                    if is_local:
+                                        if '<think>' in chunk:
+                                            in_think[0] = True
+                                            chunk = chunk[:chunk.index('<think>')]
+                                        if in_think[0]:
+                                            if '</think>' in raw_chunk:
+                                                in_think[0] = False
+                                                chunk = raw_chunk[raw_chunk.index('</think>') + 8:]
+                                            else:
+                                                content += raw_chunk
+                                                continue
+                                    content += raw_chunk
+                                    if chunk and on_chunk:
+                                        on_chunk(chunk, line_count)
+                                if 'tool_calls' in delta:
+                                    for tc in delta['tool_calls']:
+                                        idx = tc.get('index', 0)
+                                        if idx not in tool_calls_data:
+                                            tool_calls_data[idx] = {'id': '', 'name': '', 'arguments': ''}
+                                        if 'id' in tc:
+                                            tool_calls_data[idx]['id'] = tc['id']
+                                        if 'function' in tc:
+                                            if 'name' in tc['function']:
+                                                tool_calls_data[idx]['name'] = tc['function']['name']
+                                            if 'arguments' in tc['function']:
+                                                tool_calls_data[idx]['arguments'] += tc['function']['arguments']
+                            except:
+                                pass
+                    except Exception as e:
+                        print(f"\n[Stream error: {e}]")
+
+                self._run_stream_in_thread(stream_response, max_loop_time)
+
+                # Strip think tags from accumulated content
+                if is_local:
+                    content = _strip_think_tags(content)
+
+                parsed_calls = []
+                for idx in sorted(tool_calls_data.keys()):
+                    tc = tool_calls_data[idx]
+                    try:
+                        args = json.loads(tc['arguments']) if tc['arguments'] else {}
+                        args = _fix_encoding_in_dict(args)
+                    except:
+                        args = {}
+                    if tc['name']:
+                        parsed_calls.append({"id": tc['id'], "name": tc['name'], "args": args})
+                return content, parsed_calls
+            else:
+                data = resp.json()
+                message = data["choices"][0]["message"]
+                content = message.get("content") or ""
+                if is_local and content:
+                    content = _strip_think_tags(content)
+                raw_tool_calls = message.get("tool_calls", [])
+                parsed_calls = []
+                for tc in raw_tool_calls:
+                    if tc.get("type") == "function":
                         try:
-                            future.result(timeout=max_loop_time + 10)  # Extra buffer
-                        except concurrent.futures.TimeoutError:
-                            print(f"\n[Stream thread timeout after {max_loop_time + 10}s]")
-                            raise requests.exceptions.Timeout("Stream thread timeout")
-                    
-                    # Parse tool calls after streaming completes
-                    parsed_calls = []
-                    for idx in sorted(tool_calls_data.keys()):
-                        tc = tool_calls_data[idx]
-                        try:
-                            args = json.loads(tc['arguments']) if tc['arguments'] else {}
-                            # Fix double-encoding in all string arguments
+                            args = json.loads(tc["function"]["arguments"])
                             args = _fix_encoding_in_dict(args)
                         except:
                             args = {}
-                        if tc['name']:
-                            parsed_calls.append({"id": tc['id'], "name": tc['name'], "args": args})
-                    return content, parsed_calls
-                else:
-                    data = resp.json()
-                    message = data["choices"][0]["message"]
-                    content = message.get("content") or ""
-                    raw_tool_calls = message.get("tool_calls", [])
-                    parsed_calls = []
-                    for tc in raw_tool_calls:
-                        if tc.get("type") == "function":
-                            try:
-                                args = json.loads(tc["function"]["arguments"])
-                                # Fix double-encoding in all string arguments
-                                args = _fix_encoding_in_dict(args)
-                            except:
-                                args = {}
-                            parsed_calls.append({"id": tc["id"], "name": tc["function"]["name"], "args": args})
-                    return content, parsed_calls
-            except requests.exceptions.HTTPError as e:
-                status = e.response.status_code if e.response else 0
-                body = ""
-                try:
-                    body = e.response.text[:500] if e.response else ""
-                except:
-                    pass
-                print(f"[HTTP Error {status}, attempt {attempt + 1}] {body}")
-                if status in (401, 403, 429):
-                    TokenManager.rotate_token()
-                time.sleep(2 ** attempt)
-            except requests.exceptions.ConnectionError as e:
-                print(f"[Connection Error, attempt {attempt + 1}] {e}")
-                time.sleep(2 ** attempt)
-            except requests.exceptions.Timeout as e:
-                print(f"[Timeout Error, attempt {attempt + 1}] {e}")
-                time.sleep(2 ** attempt)
-            except Exception as e:
-                print(f"[Error: {type(e).__name__}: {e}, attempt {attempt + 1}]")
-                time.sleep(2 ** attempt)
-        return "[Error: All API attempts failed]", []
+                        parsed_calls.append({"id": tc["id"], "name": tc["function"]["name"], "args": args})
+                return content, parsed_calls
+
+        return self._api_request_with_retry(payload, streaming, on_success, ("[Error: All API attempts failed]", []), charset_utf8=True)
 
 
 def execute_tool(tool_call: dict) -> str:
@@ -1243,6 +1385,12 @@ def execute_tool(tool_call: dict) -> str:
                 args.get("descriptions"),
                 args.get("saveDir")
             ))
+
+        # RLM (Recursive Language Model) Tools
+        elif name == "llmQuery":
+            return json.dumps(_llm_query(args["query"], args.get("context", ""), args.get("maxTokens", 1024)))
+        elif name == "llmMapReduce":
+            return json.dumps(_llm_map_reduce(args["text"], args["mapPrompt"], args["reducePrompt"], args.get("chunkSize", 3000), args.get("overlap", 200)))
 
         else:
             return f"Unknown tool: {name}"
